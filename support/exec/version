@@ -1,0 +1,8 @@
+#!/bin/sh
+_HELP="this script shows server version!"
+[ "$1" == "help" ] && {
+	echo -en "\r$_HELP\r"
+	exit
+}
+echo -en "phxd: python hxd, by Vertigo (avaraline.net)\r"
+echo -en "phxd-kang: hmm by kang, (www.insecure.ws, kang@insecure.ws, feel free to say hi !)\r"

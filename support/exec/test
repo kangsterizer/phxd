@@ -1,0 +1,17 @@
+#!/bin/sh
+_HELP="this script shows your environment variables."
+[ "$1" == "help" ] && {
+	echo -en "\r$_HELP\r"
+	exit
+}
+echo -en "\r"
+echo -en "login: $_LOGIN\r"
+echo -en "uid: $_UID\r"
+echo -en "ip: $_IP\r"
+echo -en "icon: $_ICON\r"
+echo -en "color: $_COLOR\r"
+echo -en "nick: $_NICK\r"
+echo -en "name: $_NAME\r"
+echo -en "privs: $_PRIVS\r"
+echo -en "fileroot: $_FROOT\r"
+echo -en "proto: $_PROTO\r"

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+echo -en "\r> Server-side scripts"
+list=$(ls ./exec)
+for i in $list; do
+	[ "$i" == "help" ] && continue
+	echo -en "\r> $i: "
+	grep _HELP  exec/$i | head -n 1 | tr -d "_HELP=" | tr -d \" | tr -d '\n'
+done
+
+echo -en "\r>\r> Server-side commands"
+
+echo -en "\r\
+> xfers: shows transferts going on server-wide.\r\
+> uptime: shows server uptime.\r\
+> version: shows server version\r\
+"
