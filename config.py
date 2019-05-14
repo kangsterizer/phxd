@@ -45,15 +45,10 @@ BAN_TIME = 15 * 60
 # tracker client options
 ################################################################################
 
-TRACKER_LIST=[("127.0.0.1", 5497)]
-
-#TRACKER_LIST=[('tracker.preterhuman.net', 5497),
-#              ('tracked.agent79.org', 5497),
-#              ('hotline.duckdns.org', 5497)
-#              ('tracked.stickytack.com', 5497),
-#              ('tracked.nailbat.com', 5497),
-#              ('hotline.ubersoft.org', 5497)]
-
+# TRACKER_LIST example:
+#TRACKER_LIST=[("tracker.hostname.tld", 5497),
+#              ("127.0.0.1", 5497)]
+TRACKER_LIST=[]
 TRACKER_REFRESH_PERIOD=60
 
 
