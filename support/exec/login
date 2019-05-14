@@ -6,4 +6,5 @@ if [ $_LOGIN == "guest" ]; then
 echo -en "> Your access has been logged, $_IP\r"
 echo -en "> If you do not agree, please leave now :)\r"
 fi
-echo -en "Welcome to phxd"
+# echo -en "And kang last words were.. Long live Hotline!\r\r"
+echo -en "Welcome to chatonly.org"

@@ -6,3 +6,4 @@ _HELP="this script shows server version!"
 }
 echo -en "phxd: python hxd, by Vertigo (avaraline.net)\r"
 echo -en "phxd-kang: hmm by kang, (www.insecure.ws, kang@insecure.ws, feel free to say hi !)\r"
+echo -en "phxd tracker client: by Cat'Killer, (catkiller@catkiller.org)\r"

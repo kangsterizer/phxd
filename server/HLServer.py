@@ -1,4 +1,5 @@
 from twisted.internet.protocol import Factory , Protocol
+from twisted.internet import task
 from twisted.internet import reactor
 from shared.HLProtocol import *
 from shared.HLTypes import *
@@ -7,6 +8,10 @@ from server.HLFileServer import *
 from server.HLWebServices import *
 from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
+from server.HLTracker import HLTrackerClient
+import sys
+#from twisted.logger import globalLogBeginner, textFileLogObserver
+#globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)])
 
 from config import *
 import time , logging
@@ -170,7 +175,25 @@ class HLServer( Factory ):
 		self.linker = HLServerLinker( self )
 		self._initLog()
 		reactor.listenTCP( self.port , self )
+                # Update all trackers periodically
+                recurrentTask = task.LoopingCall(self.updateTrackers)
+                recurrentTask.start(TRACKER_REFRESH_PERIOD)
+                #recurrentTask.addErrback(updateTrackersFailed)
 	
+        def updateTrackers(self):
+            """Updates the register trackers, if any, with the name
+            and description of server and the current user count.
+            """
+            for hostname, port in TRACKER_LIST:
+                tracker = HLTrackerClient(self, hostname, port)
+                tracker.update()
+
+        def updateTrackersFailed(self, reason):
+            """Errback invoked when the task to update the trackers
+            fails for whatever reason.
+            """
+            print "Failed to update tracker: reason"
+
 	def _initLog( self ):
 		self.log.setLevel( logging.DEBUG )
 		if ENABLE_FILE_LOG:
@@ -288,6 +311,11 @@ class HLServer( Factory ):
 			return user
 		return None
 	
+        def getUserCount(self):
+            """Returns the number of logged in HLUsers."""
+            return len([user for _, user in self.clients.items()
+                        if user.isLoggedIn()])
+
 	def getOrderedUserlist( self ):
 		""" Returns a list of HLUsers, ordered by uid. """
 		keys = self.clients.keys()

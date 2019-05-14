@@ -37,8 +37,25 @@ LOG_FILE = "phxd.log"
 
 SERVER_PORT = 5500
 SERVER_NAME = "phxd server"
+SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
 BAN_TIME = 15 * 60
+
+################################################################################
+# tracker client options
+################################################################################
+
+TRACKER_LIST=[("127.0.0.1", 5497)]
+
+#TRACKER_LIST=[('tracker.preterhuman.net', 5497),
+#              ('tracked.agent79.org', 5497),
+#              ('hotline.duckdns.org', 5497)
+#              ('tracked.stickytack.com', 5497),
+#              ('tracked.nailbat.com', 5497),
+#              ('hotline.ubersoft.org', 5497)]
+
+TRACKER_REFRESH_PERIOD=60
+
 
 ################################################################################
 # chat options

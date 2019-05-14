@@ -21,6 +21,7 @@ class TextDatabase (HLDatabase):
 			4: "Accounts" ,
 			5: "Files" ,
 			6: "Transfers" ,
+			7: "Trackers" ,
 			99: "Errors" ,
 		}
 	

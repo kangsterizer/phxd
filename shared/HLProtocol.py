@@ -2,6 +2,13 @@ from struct import *
 from config import *
 import re
 
+def buildTrackerClientPacket(name, description, users):
+    """Builds an info packet incorporating the specified name
+    and description ASCII strings and user numbers integer.
+    """
+    return b'\x00\x01\x15\x7c%s\x00\x00\x00\x00\x00\x00\x0c%s,%s\x00' % (
+            pack('>H', users), name, description)
+
 def ircCheckUserNick( user ):
 	""" Check for nick conformance to IRC standards and rename a correct one """
 	nickname = ""
@@ -378,7 +385,7 @@ class HLPacket:
 						proto = "Hotline"
 					
 					data = ":"+IRC_SERVER_NAME+" 311 "+user.nick+" "+mynick+" ~"+mynick+" "+u.ip+" * :"+u.account.name.replace(" ", "_")+"\r\n"
-					data += ":"+IRC_SERVER_NAME+" 312 "+user.nick+" "+mynick+" "+IRC_SERVER_NAME+"\r\n"
+					data += ":"+IRC_SERVER_NAME+" 312 "+user.nick+" "+mynick+" "+IRC_SERVER_NAME+" :http//chatonly.org\r\n"
 					data += ":"+IRC_SERVER_NAME+" 320 "+user.nick+" "+mynick+" :Using protocol "+proto+"\r\n"
 					data += ":"+IRC_SERVER_NAME+" 317 "+user.nick+" "+mynick+" "+idle+" 0 :seconds idle, signon time\r\n"
 					data += ":"+IRC_SERVER_NAME+" 318 "+user.nick+" "+mynick+" :End of /WHOIS list.\r\n"
