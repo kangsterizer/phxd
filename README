@@ -1,0 +1,47 @@
+Introduction
+============
+
+phxd is a hotline server written in pure python, using the Twisted Matrix
+(http://twistedmatrix.com/) asynchronous networking library. Developed
+primarily by Avaraline (http://www.avaraline.net/) for internal use, phxd
+represents the fourth -- and most polished -- iteration in a long series of
+hotline servers spanning 6 years and 3 languages. We settled on python for its
+ease of expandability and low development time.
+
+phxd supports the majority of the hotline 1.2.3 protocol, as well as several
+protocol extensions developed by Avaraline. This document will cover briefly
+how to easily extend phxd.
+
+Writing Chat Command Handlers
+=============================
+
+In the handlers/commands directory, you'll see several short python files,
+each with one function named "handle" defined in them. When a user enters a
+line of chat starting with "/", phxd searches this directory for a filename
+matching the chat command. For instance, typing "/away" will execute the
+handle() function in handlers/commands/away.py.
+
+The handle function must be defined as follows:
+
+def handle( server , user , args , ref ):
+	...
+
+server - the HLServer instance the command was received on
+  user - the HLUser instance representing the user who entered the command
+  args - any text after the command, passed as a string
+   ref - the private chat ID, or 0 if the command was in public chat
+
+See the provided chat command scripts for examples on how this works, as well
+as HLProtocol.py, HLServer.py, and HLTypes.py for API references. In the phxd
+directory, running an interactive python shell and typing:
+
+help("HLProtocol")
+help("HLServer")
+help("HLTypes")
+
+will give you a formatted reference of all classes and methods.
+
+Writing Packet Handlers
+=======================
+
+Coming soon...

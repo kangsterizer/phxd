@@ -9,7 +9,6 @@ from config import *
 import os
 
 class HLTransferConnection( Protocol ):
-	#twisted update
 	#__implements__ = Protocol.__implements__ + ( IProducer , )
 	
 	def connectionMade( self ):

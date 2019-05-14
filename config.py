@@ -8,7 +8,6 @@
 # available database types:
 #    * MySQL
 #    * Text
-#DB_TYPE = "MySQL"
 DB_TYPE = "Text"
 
 # used when DB_TYPE is MySQL
@@ -35,7 +34,7 @@ LOG_FILE = "phxd.log"
 ################################################################################
 
 SERVER_PORT = 5500
-SERVER_NAME = "hi"
+SERVER_NAME = "phxd server"
 IDLE_TIME = 10 * 60
 BAN_TIME = 15 * 60
 
@@ -81,12 +80,12 @@ XMLRPC_PORT = 5800
 # IRC options
 ################################################################################
 
-IRC_SERVER_NAME = "hotline.org"
+IRC_SERVER_NAME = "phxd"
 
 
 ################################################################################
 # Server linking options
 ################################################################################
 
-ENABLE_SERVER_LINKING = True
+ENABLE_SERVER_LINKING = False
 LINK_PORT = SERVER_PORT + 3

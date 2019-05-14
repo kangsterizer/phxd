@@ -1,9 +1,9 @@
 _HELP="this is the login script. it is executed at login time automatically."
-[ $_PROTO == "Hotline" ] && echo -en "\r> Welcome to Chatonly, $_NAME\r\r"
-[ $_PROTO == "IRC" ] && echo -en ":> Welcome to Chatonly, $_NAME. Feeling like IRCing today ?"
+[ $_PROTO == "Hotline" ] && echo -en "\r> Welcome to PHXD, $_NAME\r\r"
+[ $_PROTO == "IRC" ] && echo -en ":> Welcome to PHXD, $_NAME. Feeling like IRCing today ?"
 echo -en "\r"
 if [ $_LOGIN == "guest" ]; then
 echo -en "> Your access has been logged, $_IP\r"
 echo -en "> If you do not agree, please leave now :)\r"
 fi
-# echo -en "And kang last words were.. Long live Hotline!\r\r"
+echo -en "Welcome to phxd"

@@ -1,0 +1,59 @@
+What does this version includes.. ?
+==================================
+
+
+The features which are either experimental, either not approved for the main
+phxd tree !
+
+ - shell exec commands (support/exec)
+ - color/icon/nick ownage (/0wn uid nick|icon|color value ; /color value)
+ - login message (from support/exec/login)
+ - per user viewable dropboxes (haskish:) (can only browse dropboxes with your
+ login in the directory name)
+
+IRC Support
+===========
+
+IRC Support is a bit hackish but it works.
+Basically, it translates HL packets to IRC packets and reverse withing shared/HLProtocol.py
+There are a few things here and here you can diff against the previous CVS revision or main release, or even,grep out "irc" ;)
+
+This should be refactored to use handlers instead, but I unfortunately lost interest. Also it should conform to IRC RFC protocol and have a list of every action number (you know, thoses 300, 301, 302 when you first connect to a server). 
+
+Just set your server irc name in the config file, and connect with any client to yourip:hotlineport, example:
+
+/server localhost:5500
+
+the server will tell you to msg loginserv, so do it with your login and pass
+
+/msg loginserv kang mysecretpass
+
+you will then be logged on,and joined to #public which is the public chat
+
+you can execute server side commands with /, \ and ! (other people wont see them, only you)
+
+you can read news with !news X where x is the number of last posts you want to see
+
+All users in user list have their UID in front of their name: IRC need unique names !
+However, in chat, names are correct.
+
+What was in progress and unfinished:
+-----------------------------------
+private chats are half implemented, they maybe work, you will get a notice of invitation and a channel to join when you are on irc. However, you cannot invite someone from irc with the current code.
+
+What else.. DCC could be implemented easily and a few other IRC features like this one..
+Globally its very stable and useable anyway.
+
+I suggest you to redirect port 6667 (IRC) to your hotline port (probably 5500) so that IRC users can connect easily, a lot of people just dont know how to change the port on IRC ...
+On NAT + iptables, just do that:
+(change eth1 or ports if necessary, or remove -t nat if you are not using nat)
+
+iptables -t nat -I PREROUTING -i eth1 -p tcp --dport 6667 -j REDIRECT --to-ports 5500
+
+
+Alright!! If you made it that far, you should be one of the few.
+If you wish to go on with IRC support or any functionality I added and need help, or not, please make sure to mail me. I would be happy just to know someone uses it!
+
+Ill always remember this Hotline. Thanks hinks!
+
+kang@insecure.ws
