@@ -1,3 +1,4 @@
+import os
 ################################################################################
 # database configuration
 ################################################################################
@@ -17,10 +18,11 @@ DB_PASS = ""
 DB_NAME = "phxd"
 
 # used when DB_TYPE is Text
-DB_FILE_NEWSDIR = "db_news"
-DB_FILE_ACCOUNTS = "db_accounts.txt"
-DB_FILE_LOG = "db_log.txt"
-DB_FILE_BANLIST = "db_banlist.txt"
+DB_FILE_BASEPATH = "textdb"
+DB_FILE_NEWSDIR = os.path.join(DB_FILE_BASEPATH, "db_news")
+DB_FILE_ACCOUNTS = os.path.join(DB_FILE_BASEPATH, "db_accounts.txt")
+DB_FILE_LOG = os.path.join(DB_FILE_BASEPATH, "db_log.txt")
+DB_FILE_BANLIST = os.path.join(DB_FILE_BASEPATH, "db_banlist.txt")
 
 ################################################################################
 # logging configuration
