@@ -176,7 +176,15 @@ class HLServer( Factory ):
 		if ENABLE_FILE_LOG:
 			# the formatter is just for the file logger
 			fmt = logging.Formatter( '%(asctime)s\t%(message)s' )
-			fileHandler = logging.FileHandler( LOG_FILE )
+                        try:
+                            fileHandler = logging.FileHandler( LOG_FILE )
+                        except IOError:
+                            # Logfile directory most likely doesn't exist, attempt
+                            # to create it and try again.
+                            import os
+                            os.makedirs(os.path.dirname(LOG_FILE))
+                            fileHandler = logging.FileHandler( LOG_FILE )
+                            # If opening the file handle fails at this point, raise
 			fileHandler.setFormatter( fmt )
 			# make sure everything goes to the file log
 			fileHandler.setLevel( logging.DEBUG )
