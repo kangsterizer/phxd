@@ -75,9 +75,10 @@ class HLConnection( Protocol ):
 					user.nick = nick # Making sure we have the right nick.
 					self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
 					self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** Please /msg loginserv login password to proceed.\r\n" )
+					self.transport.write ( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
+					self.transport.write ( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
 					self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for loosers.\r\n" % user.nick )
+					self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
 					self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
 					self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
 

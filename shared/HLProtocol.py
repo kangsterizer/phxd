@@ -134,12 +134,18 @@ class HLPacket:
 					# Authentication "bot"
 					if line.split( " " , 2 )[1] == "loginserv":
 						self.type = HTLC_HDR_LOGIN
-						self.addString( DATA_LOGIN , HLEncode( line.split( " " , 3 )[2][1:] ) )
+                                                loginStr = line.split(" ", 3)[2]
+                                                if loginStr.startswith(":"):
+                                                    # In IRC private messages not containing space separated text
+                                                    # are not prefixed with a colon character ":". This is important
+                                                    # for passwordless login to loginserv, i.e. Guest login.
+                                                    loginStr = loginStr[1:]
+						self.addString( DATA_LOGIN , HLEncode( loginStr ) )
 						try:
 							self.addString( DATA_PASSWORD , HLEncode( line.split( " " , 4 )[3] ) )
 						except IndexError:
-							print "debug:"
-							print line
+                                                        # No password provided, but HL can handle blank passwords, try that.
+                                                        self.addString(DATA_PASSWORD, HLEncode(""))
 							print "no password provided.."
 					else:
 						try:
