@@ -11,7 +11,7 @@ CREATE TABLE accounts (
 );
 
 INSERT INTO accounts ( login , password , privs , name ) VALUES ( 'admin' , '25e4ee4e9229397b6b17776bfceaf8e7' , -1 , 'Administrator' );
-INSERT INTO accounts ( login , password , privs , name ) VALUES ( 'guest' , 'd41d8cd98f00b204e9800998ecf8427e' , 27021597764222976 , 'Guest Account' );
+INSERT INTO accounts ( login , password , privs , name ) VALUES ( 'guest' , 'd41d8cd98f00b204e9800998ecf8427e' , 27021735203176448 , 'Guest Account' );
 
 CREATE TABLE news (
 	id INTEGER PRIMARY KEY AUTO_INCREMENT ,
