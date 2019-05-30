@@ -186,8 +186,7 @@ class HLServer( Factory ):
             and description of server and the current user count.
             """
             for hostname, port in TRACKER_LIST:
-                tracker = HLTrackerClient(self, hostname, port)
-                tracker.update()
+                reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
 
         def updateTrackersFailed(self, reason):
             """Errback invoked when the task to update the trackers
@@ -314,7 +313,7 @@ class HLServer( Factory ):
 	
         def getUserCount(self):
             """Returns the number of logged in HLUsers."""
-            return len([user for _, user in self.clients.items()
+            return len([user for _, user in self.clients.values()
                         if user.isLoggedIn()])
 
 	def getOrderedUserlist( self ):

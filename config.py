@@ -46,8 +46,8 @@ BAN_TIME = 15 * 60
 ################################################################################
 
 # TRACKER_LIST example:
-#TRACKER_LIST=[("tracker.hostname.tld", 5497),
-#              ("127.0.0.1", 5497)]
+#TRACKER_LIST=[("tracker.hostname.tld", 5499),
+#              ("127.0.0.1", 5499)]
 TRACKER_LIST=[]
 TRACKER_REFRESH_PERIOD=60
 

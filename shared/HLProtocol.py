@@ -1,13 +1,16 @@
 from struct import *
 from config import *
+import random
 import re
 
-def buildTrackerClientPacket(name, description, users):
+def buildTrackerClientPacket(name, description, port, users):
     """Builds an info packet incorporating the specified name
     and description ASCII strings and user numbers integer.
     """
-    return b'\x00\x01\x15\x7c%s\x00\x00\x00\x00\x00\x00\x0c%s,%s\x00' % (
-            pack('>H', users), name, description)
+    return b'\x00\x01%s%s\x00\x00%s%s%s%s%s\x00' % (
+            pack('>H', port), pack('>H', users), pack("I",
+            random.randint(0, 4294967295)), pack('b', len(name)),
+            name, pack('b', len(description)), description)
 
 def ircCheckUserNick( user ):
 	""" Check for nick conformance to IRC standards and rename a correct one """
