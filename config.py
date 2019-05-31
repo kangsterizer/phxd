@@ -29,7 +29,9 @@ DB_FILE_BANLIST = os.path.join(DB_FILE_BASEPATH, "db_banlist.txt")
 ################################################################################
 
 ENABLE_FILE_LOG = True
-LOG_FILE = "phxd.log"
+LOG_FILE = os.path.join(DB_FILE_BASEPATH, "phxd.log")
+LOG_MAX_SIZE_MBYTES = 10
+MAX_LOG_FILES = 5
 
 ################################################################################
 # server configuration

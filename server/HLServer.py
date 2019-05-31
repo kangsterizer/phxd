@@ -15,6 +15,7 @@ import sys
 
 from config import *
 import time , logging
+from logging.handlers import RotatingFileHandler
 
 class HLConnection( Protocol ):
 	""" Protocol subclass to handle parsing and dispatching of raw hotline data. """
@@ -199,14 +200,17 @@ class HLServer( Factory ):
 		if ENABLE_FILE_LOG:
 			# the formatter is just for the file logger
 			fmt = logging.Formatter( '%(asctime)s\t%(message)s' )
+                        logSizeBytes = LOG_MAX_SIZE_MBYTES * 1024 * 1024
                         try:
-                            fileHandler = logging.FileHandler( LOG_FILE )
+                            fileHandler = RotatingFileHandler( LOG_FILE,
+                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
                         except IOError:
                             # Logfile directory most likely doesn't exist, attempt
                             # to create it and try again.
                             import os
                             os.makedirs(os.path.dirname(LOG_FILE))
-                            fileHandler = logging.FileHandler( LOG_FILE )
+                            fileHandler = logging.FileHandler( LOG_FILE,
+                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
                             # If opening the file handle fails at this point, raise
 			fileHandler.setFormatter( fmt )
 			# make sure everything goes to the file log
@@ -383,7 +387,7 @@ class HLServer( Factory ):
 	#	return self.clients
 	# DELETEME i think its dead code!!
 
-	def logEvent( self , type , msg , user = None ):
+	def logEvent( self , typeInt , msg , user = None ):
 		""" Logs an event. If user is specified, the event will be logged with the users nickname, login, and IP address. """
 		login = ""
 		nickname = ""
@@ -392,15 +396,20 @@ class HLServer( Factory ):
 			login = user.account.login
 			nickname = user.nick
 			ip = user.ip
-		# format as <type>\t<message>\t<login>\t<nickname>\t<ip>
+                typeStr = str(typeInt)
+                try:
+                    typeStr = LOG_TYPE_STR_MAP[typeInt]
+                except KeyError:
+                    pass
+		# format as <typeStr>\t<message>\t<login>\t<nickname>\t<ip>
 		# this is the "message" for the FileLogger
-		fmt = "%d\t%s\t%s\t%s\t%s"
+		fmt = "%s\t%s\t%s\t%s\t%s"
 		if type == LOG_TYPE_ERROR:
-			self.log.error( fmt, type, msg, login, nickname, ip )
+			self.log.error( fmt, typeStr, msg, login, nickname, ip )
 		elif type == LOG_TYPE_DEBUG:
-			self.log.debug( fmt, type, msg, login, nickname, ip )
+			self.log.debug( fmt, typeStr, msg, login, nickname, ip )
 		else:
-			self.log.info( fmt, type, msg, login, nickname, ip )
+			self.log.info( fmt, typeStr, msg, login, nickname, ip )
 	
 	def updateAccounts( self , acct ):
 		""" Updates the account information for all current users with login matching that of the specified HLAccount. """

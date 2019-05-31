@@ -13,6 +13,16 @@ LOG_TYPE_TRACKER =      7
 LOG_TYPE_ERROR =	99
 LOG_TYPE_DEBUG =	666
 
+LOG_TYPE_STR_MAP = {LOG_TYPE_GENERAL:"GENERAL",
+                    LOG_TYPE_LOGIN:"LOGIN",
+                    LOG_TYPE_USER:"USER",
+                    LOG_TYPE_ACCOUNT:"ACCOUNT",
+                    LOG_TYPE_FILE:"FILE",
+                    LOG_TYPE_TRANSFER:"TRANSFER",
+                    LOG_TYPE_TRACKER:"TRACKER",
+                    LOG_TYPE_ERROR:"ERROR",
+                    LOG_TYPE_DEBUG:"DEBUG"}
+
 class HLException:
 	""" Exception thrown due to protocol errors. """
 	
