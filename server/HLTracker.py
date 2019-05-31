@@ -47,18 +47,14 @@ class HLTrackerClient(DatagramProtocol):
         count, server name, description and TCP port to reach it on.
         """
         self.transport.connect(hostIP, self.port)
+        userCount = self.server.getUserCount()
         packet = buildTrackerClientPacket(SERVER_NAME, SERVER_DESCRIPTION,
-                                          SERVER_PORT, self.server.getUserCount())
+                                          SERVER_PORT, userCount)
         self.transport.write(packet)
-
-    def stopProtocol(self):
-        """
-        Called after the transport has disconnected.
-        The tracker update UDP packet has been processed
-        at this point.
-        """
-        self.server.logEvent(LOG_TYPE_TRACKER, "Updated tracker {}:{}".format(
-                             self.hostname, self.port))
+        self.server.logEvent(LOG_TYPE_TRACKER, "Updated tracker {}:{} with {} "
+                             "users.".format(self.hostname, self.port, userCount))
+        # We're done, close this connection.
+        self.transport.loseConnection()
 
     def connectionRefused(self):
         """
