@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 _HELP="this script shows server version!"
 [ "$1" == "help" ] && {
 	echo -en "\r$_HELP\r"

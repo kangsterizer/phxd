@@ -1,3 +1,4 @@
+#!/bin/bash
 _HELP="this is the login script. it is executed at login time automatically."
 [ $_PROTO == "Hotline" ] && echo -en "\r> Welcome to PHXD, $_NAME\r\r"
 [ $_PROTO == "IRC" ] && echo -en ":> Welcome to PHXD, $_NAME. Feeling like IRCing today ?"

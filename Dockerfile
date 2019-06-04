@@ -1,7 +1,12 @@
-FROM python:2
+FROM python:2-alpine
 MAINTAINER Cat'Killer <catkiller@catkiller.org>
 
-RUN pip install twisted
+# The "exec" plugins are all written in bash and won't
+# work with bourne. Install bash to ensure they work.
+RUN apk add --no-cache bash
+
+# gcc and other build tools not in alpine. Add them as virtual packages, build Twisted and delete them.
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev && pip install twisted && apk del .build-deps
 
 WORKDIR /app
 
