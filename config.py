@@ -37,7 +37,7 @@ MAX_LOG_FILES = 5
 # server configuration
 ################################################################################
 
-SERVER_PORT = 6667
+SERVER_PORT = 5500
 SERVER_NAME = "phxd server"
 SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
