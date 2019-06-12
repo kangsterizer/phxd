@@ -65,29 +65,7 @@ class HLConnection( Protocol ):
 		else:
 			if len( self.buffer ) >= 12:
 				( proto , subProto , vers , subVers ) = unpack( "!LLHH" , self.buffer[0:12] )
-				if ( self.buffer[0:4] == "NICK" ) or ( self.buffer[0:4] == "USER" ):
-					self.buffer = self.buffer.replace("\r", "")
-					if self.buffer[0:4] == "USER":
-						nick = self.buffer.split("\n")[0].split(" ")[1]
-					elif self.buffer[0:4] == "NICK":
-						nick = self.buffer.split("\n")[0].split(" ")[1]
-					else: nick = "Unnamed"
-					user = self.factory.getUser( self.connID )
-					user.nick = nick # Making sure we have the right nick.
-					self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
-
-					self.isIRC = True
-					self.gotMagic = True
-					self.parseBuffer()
-
-				elif proto == HLCharConst( "TRTP" ):
+				if proto == HLCharConst( "TRTP" ):
 					self.buffer = self.buffer[12:]
 					self.gotMagic = True
 					self.transport.write( pack( "!2L" , HLCharConst( "TRTP" ) , 0 ) )
@@ -95,7 +73,42 @@ class HLConnection( Protocol ):
 					if len( self.buffer ) > 0:
 						self.parseBuffer()
 				else:
-					self.transport.loseConnection()
+					# Not hotline, assume IRC. Multiple commands can be chained in IRC.
+					cmds = self.buffer.splitlines()
+					if cmds[0].startswith("CAP"):
+						# We received CAP LS, ignore it and read the rest of the buffer
+						# This is for compatibility with IRC v3.02 clients like irssi
+						cmds.pop(0)
+					# If there are no further commands, close the connection.
+					if not cmds:
+						self.transport.loseConnection()
+					# More commands still in the buffer, parse them.
+					value = ""
+					try:
+						cmd, value = cmds[0].split(" ", 1)
+					except ValueError:
+						# Value isn't defined, only parse cmd
+						cmd = cmds[0].split(" ", 1)[0]
+					# Check the first command, if NICK or USER, login, else return UNKNOWN COMMAND
+					if ( cmd == "NICK" ) or ( cmd == "USER" ):
+						nick = value or "Unnamed"
+						user = self.factory.getUser( self.connID )
+						user.nick = nick # Making sure we have the right nick.
+						self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
+
+						self.isIRC = True
+						self.gotMagic = True
+						self.parseBuffer()
+					else:
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd )
+						self.transport.loseConnection()
 	
 	def handlePacket( self ):
 		""" Dispatch the packet to the factory (and its listeners) and check to see if we should update our away status. """
@@ -104,6 +117,9 @@ class HLConnection( Protocol ):
 			if not user:
 				self.transport.loseConnection()
 				return
+			if self.isIRC and self.packet.irctrap:
+				# Unsupported command, return 421
+				self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) )
 			if user.isLoggedIn():
 				# Make sure we're logged in before doing anything.
 				self.factory.dispatchPacket( self.connID , self.packet )
@@ -134,6 +150,7 @@ class HLConnection( Protocol ):
 			# Unhandled packets and task errors will be caught here.
 			if self.isIRC:
 				if self.packet.irctrap:
+					# Not sure this is still required since we already return a 421 "Unknown command" reply.
 					self.transport.write( "NOTICE * :*** HL Error 0x%x [%s] %s\r\n"  % ( self.packet.type, self.packet.irctrap, ex.msg ))
 			else:
 				packet = HLPacket( HTLS_HDR_TASK , self.packet.seq , 1 )

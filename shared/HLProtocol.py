@@ -212,7 +212,6 @@ class HLPacket:
 
 			else:
 				self.irctrap = cmd
-				print line
 
 			return len( line )
 		# This is the Hotline code now.
