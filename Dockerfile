@@ -6,7 +6,11 @@ MAINTAINER Cat'Killer <catkiller@catkiller.org>
 RUN apk add --no-cache bash
 
 # gcc and other build tools not in alpine. Add them as virtual packages, build Twisted and delete them.
-RUN apk add --no-cache --virtual .build-deps gcc musl-dev && pip install twisted && apk del .build-deps
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev
+RUN pip install --upgrade pip
+RUN pip install typing
+RUN pip install twisted
+RUN apk del .build-deps
 
 WORKDIR /app
 
