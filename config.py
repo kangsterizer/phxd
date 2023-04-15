@@ -1,3 +1,4 @@
+import os
 ################################################################################
 # database configuration
 ################################################################################
@@ -8,7 +9,6 @@
 # available database types:
 #    * MySQL
 #    * Text
-#DB_TYPE = "MySQL"
 DB_TYPE = "Text"
 
 # used when DB_TYPE is MySQL
@@ -18,26 +18,41 @@ DB_PASS = ""
 DB_NAME = "phxd"
 
 # used when DB_TYPE is Text
-DB_FILE_NEWSDIR = "db_news"
-DB_FILE_ACCOUNTS = "db_accounts.txt"
-DB_FILE_LOG = "db_log.txt"
-DB_FILE_BANLIST = "db_banlist.txt"
+DB_FILE_BASEPATH = "textdb"
+DB_FILE_NEWSDIR = os.path.join(DB_FILE_BASEPATH, "db_news")
+DB_FILE_ACCOUNTS = os.path.join(DB_FILE_BASEPATH, "db_accounts.txt")
+DB_FILE_LOG = os.path.join(DB_FILE_BASEPATH, "db_log.txt")
+DB_FILE_BANLIST = os.path.join(DB_FILE_BASEPATH, "db_banlist.txt")
 
 ################################################################################
 # logging configuration
 ################################################################################
 
 ENABLE_FILE_LOG = True
-LOG_FILE = "phxd.log"
+LOG_FILE = os.path.join(DB_FILE_BASEPATH, "phxd.log")
+LOG_MAX_SIZE_MBYTES = 10
+MAX_LOG_FILES = 5
 
 ################################################################################
 # server configuration
 ################################################################################
 
 SERVER_PORT = 5500
-SERVER_NAME = "hi"
+SERVER_NAME = "phxd server"
+SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
 BAN_TIME = 15 * 60
+
+################################################################################
+# tracker client options
+################################################################################
+
+# TRACKER_LIST example:
+#TRACKER_LIST=[("tracker.hostname.tld", 5499),
+#              ("127.0.0.1", 5499)]
+TRACKER_LIST=[]
+TRACKER_REFRESH_PERIOD=60
+
 
 ################################################################################
 # chat options
@@ -81,12 +96,12 @@ XMLRPC_PORT = 5800
 # IRC options
 ################################################################################
 
-IRC_SERVER_NAME = "hotline.org"
+IRC_SERVER_NAME = "phxd"
 
 
 ################################################################################
 # Server linking options
 ################################################################################
 
-ENABLE_SERVER_LINKING = True
+ENABLE_SERVER_LINKING = False
 LINK_PORT = SERVER_PORT + 3

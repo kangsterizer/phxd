@@ -21,6 +21,7 @@ class TextDatabase (HLDatabase):
 			4: "Accounts" ,
 			5: "Files" ,
 			6: "Transfers" ,
+			7: "Trackers" ,
 			99: "Errors" ,
 		}
 	
@@ -191,11 +192,18 @@ class TextDatabase (HLDatabase):
 		return reason
 	
 	def logEvent( self , type , event , login = "" , nick = "" , ip = "" ):
-		fp = file( self.logFile , "a" )
-		eventType = "???"
-		try:
-			eventType = self.logTypes[type]
-		except NameError:
-			pass
-		fp.write( "\n%s\t%s\t%s\t%s\t%s\t%s" % ( eventType , login , nick , ip , event , datetime.now().strftime( "%Y-%m-%d %H:%M:%S" ) ) )
-		fp.close()
+            """
+            This method is disabled, since we already have a pretty extensive
+            logging facility using ENABLE_FILE_LOG. The difference is that file
+            log runs at a DEBUG level while the DB log runs at INFO, but we have
+            currentl no DEBUG messages available anyways, so it's redundant.
+            """
+            return
+            fp = file( self.logFile , "a" )
+            eventType = "???"
+            try:
+                eventType = self.logTypes[type]
+            except NameError:
+                pass
+            fp.write( "\n%s\t%s\t%s\t%s\t%s\t%s" % ( eventType , login , nick , ip , event , datetime.now().strftime( "%Y-%m-%d %H:%M:%S" ) ) )
+            fp.close()

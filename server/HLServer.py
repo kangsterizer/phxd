@@ -1,4 +1,5 @@
 from twisted.internet.protocol import Factory , Protocol
+from twisted.internet import task
 from twisted.internet import reactor
 from shared.HLProtocol import *
 from shared.HLTypes import *
@@ -7,9 +8,14 @@ from server.HLFileServer import *
 from server.HLWebServices import *
 from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
+from server.HLTracker import HLTrackerClient
+import sys
+#from twisted.logger import globalLogBeginner, textFileLogObserver
+#globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)])
 
 from config import *
 import time , logging
+from logging.handlers import RotatingFileHandler
 
 class HLConnection( Protocol ):
 	""" Protocol subclass to handle parsing and dispatching of raw hotline data. """
@@ -59,28 +65,7 @@ class HLConnection( Protocol ):
 		else:
 			if len( self.buffer ) >= 12:
 				( proto , subProto , vers , subVers ) = unpack( "!LLHH" , self.buffer[0:12] )
-				if ( self.buffer[0:4] == "NICK" ) or ( self.buffer[0:4] == "USER" ):
-					self.buffer = self.buffer.replace("\r", "")
-					if self.buffer[0:4] == "USER":
-						nick = self.buffer.split("\n")[0].split(" ")[1]
-					elif self.buffer[0:4] == "NICK":
-						nick = self.buffer.split("\n")[0].split(" ")[1]
-					else: nick = "Unnamed"
-					user = self.factory.getUser( self.connID )
-					user.nick = nick # Making sure we have the right nick.
-					self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-					self.transport.write ( "NOTICE AUTH :*** Please /msg loginserv login password to proceed.\r\n" )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for loosers.\r\n" % user.nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
-					self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
-
-					self.isIRC = True
-					self.gotMagic = True
-					self.parseBuffer()
-
-				elif proto == HLCharConst( "TRTP" ):
+				if proto == HLCharConst( "TRTP" ):
 					self.buffer = self.buffer[12:]
 					self.gotMagic = True
 					self.transport.write( pack( "!2L" , HLCharConst( "TRTP" ) , 0 ) )
@@ -88,7 +73,42 @@ class HLConnection( Protocol ):
 					if len( self.buffer ) > 0:
 						self.parseBuffer()
 				else:
-					self.transport.loseConnection()
+					# Not hotline, assume IRC. Multiple commands can be chained in IRC.
+					cmds = self.buffer.splitlines()
+					if cmds[0].startswith("CAP"):
+						# We received CAP LS, ignore it and read the rest of the buffer
+						# This is for compatibility with IRC v3.02 clients like irssi
+						cmds.pop(0)
+					# If there are no further commands, close the connection.
+					if not cmds:
+						self.transport.loseConnection()
+					# More commands still in the buffer, parse them.
+					value = ""
+					try:
+						cmd, value = cmds[0].split(" ", 1)
+					except ValueError:
+						# Value isn't defined, only parse cmd
+						cmd = cmds[0].split(" ", 1)[0]
+					# Check the first command, if NICK or USER, login, else return UNKNOWN COMMAND
+					if ( cmd == "NICK" ) or ( cmd == "USER" ):
+						nick = value or "Unnamed"
+						user = self.factory.getUser( self.connID )
+						user.nick = nick # Making sure we have the right nick.
+						self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
+						self.transport.write ( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
+
+						self.isIRC = True
+						self.gotMagic = True
+						self.parseBuffer()
+					else:
+						self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd )
+						self.transport.loseConnection()
 	
 	def handlePacket( self ):
 		""" Dispatch the packet to the factory (and its listeners) and check to see if we should update our away status. """
@@ -97,6 +117,9 @@ class HLConnection( Protocol ):
 			if not user:
 				self.transport.loseConnection()
 				return
+			if self.isIRC and self.packet.irctrap:
+				# Unsupported command, return 421
+				self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) )
 			if user.isLoggedIn():
 				# Make sure we're logged in before doing anything.
 				self.factory.dispatchPacket( self.connID , self.packet )
@@ -127,6 +150,7 @@ class HLConnection( Protocol ):
 			# Unhandled packets and task errors will be caught here.
 			if self.isIRC:
 				if self.packet.irctrap:
+					# Not sure this is still required since we already return a 421 "Unknown command" reply.
 					self.transport.write( "NOTICE * :*** HL Error 0x%x [%s] %s\r\n"  % ( self.packet.type, self.packet.irctrap, ex.msg ))
 			else:
 				packet = HLPacket( HTLS_HDR_TASK , self.packet.seq , 1 )
@@ -170,13 +194,41 @@ class HLServer( Factory ):
 		self.linker = HLServerLinker( self )
 		self._initLog()
 		reactor.listenTCP( self.port , self )
+                # Update all trackers periodically
+                recurrentTask = task.LoopingCall(self.updateTrackers)
+                recurrentTask.start(TRACKER_REFRESH_PERIOD)
+                #recurrentTask.addErrback(updateTrackersFailed)
 	
+        def updateTrackers(self):
+            """Updates the register trackers, if any, with the name
+            and description of server and the current user count.
+            """
+            for hostname, port in TRACKER_LIST:
+                reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+
+        def updateTrackersFailed(self, reason):
+            """Errback invoked when the task to update the trackers
+            fails for whatever reason.
+            """
+            print "Failed to update tracker: reason"
+
 	def _initLog( self ):
 		self.log.setLevel( logging.DEBUG )
 		if ENABLE_FILE_LOG:
 			# the formatter is just for the file logger
 			fmt = logging.Formatter( '%(asctime)s\t%(message)s' )
-			fileHandler = logging.FileHandler( LOG_FILE )
+                        logSizeBytes = LOG_MAX_SIZE_MBYTES * 1024 * 1024
+                        try:
+                            fileHandler = RotatingFileHandler( LOG_FILE,
+                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
+                        except IOError:
+                            # Logfile directory most likely doesn't exist, attempt
+                            # to create it and try again.
+                            import os
+                            os.makedirs(os.path.dirname(LOG_FILE))
+                            fileHandler = logging.FileHandler( LOG_FILE,
+                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
+                            # If opening the file handle fails at this point, raise
 			fileHandler.setFormatter( fmt )
 			# make sure everything goes to the file log
 			fileHandler.setLevel( logging.DEBUG )
@@ -280,6 +332,11 @@ class HLServer( Factory ):
 			return user
 		return None
 	
+        def getUserCount(self):
+            """Returns the number of logged in HLUsers."""
+            return len([user for _, user in self.clients.values()
+                        if user.isLoggedIn()])
+
 	def getOrderedUserlist( self ):
 		""" Returns a list of HLUsers, ordered by uid. """
 		keys = self.clients.keys()
@@ -347,7 +404,7 @@ class HLServer( Factory ):
 	#	return self.clients
 	# DELETEME i think its dead code!!
 
-	def logEvent( self , type , msg , user = None ):
+	def logEvent( self , typeInt , msg , user = None ):
 		""" Logs an event. If user is specified, the event will be logged with the users nickname, login, and IP address. """
 		login = ""
 		nickname = ""
@@ -356,15 +413,20 @@ class HLServer( Factory ):
 			login = user.account.login
 			nickname = user.nick
 			ip = user.ip
-		# format as <type>\t<message>\t<login>\t<nickname>\t<ip>
+                typeStr = str(typeInt)
+                try:
+                    typeStr = LOG_TYPE_STR_MAP[typeInt]
+                except KeyError:
+                    pass
+		# format as <typeStr>\t<message>\t<login>\t<nickname>\t<ip>
 		# this is the "message" for the FileLogger
-		fmt = "%d\t%s\t%s\t%s\t%s"
+		fmt = "%s\t%s\t%s\t%s\t%s"
 		if type == LOG_TYPE_ERROR:
-			self.log.error( fmt, type, msg, login, nickname, ip )
+			self.log.error( fmt, typeStr, msg, login, nickname, ip )
 		elif type == LOG_TYPE_DEBUG:
-			self.log.debug( fmt, type, msg, login, nickname, ip )
+			self.log.debug( fmt, typeStr, msg, login, nickname, ip )
 		else:
-			self.log.info( fmt, type, msg, login, nickname, ip )
+			self.log.info( fmt, typeStr, msg, login, nickname, ip )
 	
 	def updateAccounts( self , acct ):
 		""" Updates the account information for all current users with login matching that of the specified HLAccount. """
