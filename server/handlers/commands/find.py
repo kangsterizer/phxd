@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 import os
 

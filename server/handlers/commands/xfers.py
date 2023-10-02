@@ -1,9 +1,10 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 
 def handle( server , user , args , ref ):
 	if user.hasPriv( PRIV_USER_INFO ):
 		str = ""
-		if len( server.fileserver.transfers.values() ) == 0:
+		if len( list(server.fileserver.transfers.values()) ) == 0:
 			str += "\r > No file transfers in progress."
 		else:
 			str += "\r > File transfers:"

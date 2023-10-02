@@ -1,7 +1,10 @@
+from __future__ import absolute_import
+from __future__ import print_function
 from server.HLDatabase import HLDatabase
 from shared.HLTypes import *
 from config import *
 import MySQLdb
+from six.moves import range
 
 class MySQLDatabase (HLDatabase):
 	""" MySQL-based implementation of HLDatabase. """
@@ -21,7 +24,7 @@ class MySQLDatabase (HLDatabase):
 	
 	def saveAccount( self , acct ):
 		cur = self.db.cursor()
-		if acct.id > 0L:
+		if acct.id > 0:
 			cur.execute( "UPDATE accounts SET password = %s , name = %s , privs = %s , fileRoot = %s WHERE id = %s" , \
 				( acct.password , acct.name , acct.privs , acct.fileRoot , acct.id ) )
 		else:
@@ -59,7 +62,7 @@ class MySQLDatabase (HLDatabase):
 	
 	def saveNewsPost( self , post ):
 		cur = self.db.cursor()
-		if post.id > 0L:
+		if post.id > 0:
 			cur.execute( "UPDATE news SET nick = %s , login = %s , post = %s , date = %s WHERE id = %s" , ( post.nick , post.login , post.post , post.date , post.id ) )
 		else:
 			cur.execute( "INSERT INTO news ( nick , login , post , date ) VALUES ( %s , %s , %s , %s )" , ( post.nick , post.login , post.post , post.date ) )
@@ -72,7 +75,7 @@ class MySQLDatabase (HLDatabase):
 			cur = self.db.cursor()
 			num = cur.execute( "SELECT reason FROM banlist WHERE address = %s" , addr )
 		except:
-			print "mysql connection lost. check that mysql is up. reconnecting now."
+			print("mysql connection lost. check that mysql is up. reconnecting now.")
 			cur = self.db.cursor()
 			self.db = MySQLdb.connect( host = DB_HOST , user = DB_USER , passwd = DB_PASS , db = DB_NAME )
 			num = cur.execute( "SELECT reason FROM banlist WHERE address = %s" , addr )
@@ -87,7 +90,7 @@ class MySQLDatabase (HLDatabase):
 			cur.execute( "INSERT INTO log ( type , login , nick , ip , entry , date ) VALUES ( %s , %s , %s , %s , %s , NOW() )" , ( type , login , nick , ip , event ) )
 			cur.close()
 		except:
-			print "mysql connection lost. check that mysql is up. reconnecting now."
+			print("mysql connection lost. check that mysql is up. reconnecting now.")
 			cur = self.db.cursor()
 			self.db = MySQLdb.connect( host = DB_HOST , user = DB_USER , passwd = DB_PASS , db = DB_NAME )
 			cur.execute( "INSERT INTO log ( type , login , nick , ip , entry , date ) VALUES ( %s , %s , %s , %s , %s , NOW() )" , ( type , login , nick , ip , event ) )

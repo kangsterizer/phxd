@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLTypes import *
 from struct import pack
@@ -25,7 +26,7 @@ class IconHandler( HLPacketHandler ):
 		user.gif = packet.getBinary( DATA_GIFICON , "" )
 		if len( user.gif ) > MAX_GIF_SIZE:
 			user.gif = ""
-			raise HLException , "GIF icon too large."
+			raise HLException("GIF icon too large.")
 		server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 		change = HLPacket( HTLS_HDR_ICON_CHANGE )
 		change.addNumber( DATA_UID , user.uid )
@@ -40,4 +41,4 @@ class IconHandler( HLPacketHandler ):
 			icon.addBinary( DATA_GIFICON , info.gif )
 			server.sendPacket( user.uid , icon )
 		else:
-			raise HLException , "Invalid user."
+			raise HLException("Invalid user.")

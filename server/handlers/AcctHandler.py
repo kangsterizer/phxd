@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLTypes import *
 from config import *
@@ -20,9 +21,9 @@ class AcctHandler( HLPacketHandler ):
 		
 		acct = server.database.loadAccount( login )
 		if not user.hasPriv( PRIV_READ_USERS ):
-			raise HLException , "You cannot read accounts."
+			raise HLException("You cannot read accounts.")
 		if acct == None:
-			raise HLException , "Error loading account."
+			raise HLException("Error loading account.")
 		
 		reply = HLPacket( HTLS_HDR_TASK , packet.seq )
 		reply.addString( DATA_LOGIN , HLEncode( acct.login ) )
@@ -39,9 +40,9 @@ class AcctHandler( HLPacketHandler ):
 		
 		acct = server.database.loadAccount( login )
 		if not user.hasPriv( PRIV_MODIFY_USERS ):
-			raise HLException , "You cannot modify accounts."
+			raise HLException("You cannot modify accounts.")
 		if acct == None:
-			raise HLException , "Invalid account."
+			raise HLException("Invalid account.")
 		
 		acct.name = name
 		acct.privs = privs
@@ -59,9 +60,9 @@ class AcctHandler( HLPacketHandler ):
 		privs = packet.getNumber( DATA_PRIVS , 0 )
 		
 		if not user.hasPriv( PRIV_CREATE_USERS ):
-			raise HLException , "You cannot create accounts."
+			raise HLException("You cannot create accounts.")
 		if server.database.loadAccount( login ) != None:
-			raise HLException , "Login already exists."
+			raise HLException("Login already exists.")
 		
 		acct = HLAccount( login )
 		acct.password = md5( passwd ).hexdigest()
@@ -75,8 +76,8 @@ class AcctHandler( HLPacketHandler ):
 	def handleAccountDelete( self , server , user , packet ):
 		login = HLEncode( packet.getString( DATA_LOGIN , "" ) )
 		if not user.hasPriv( PRIV_DELETE_USERS ):
-			raise HLException , "You cannot delete accounts."
+			raise HLException("You cannot delete accounts.")
 		if server.database.deleteAccount( login ) < 1:
-			raise HLException , "Error deleting account."
+			raise HLException("Error deleting account.")
 		server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 		server.logEvent( LOG_TYPE_ACCOUNT , "Deleted account %s." % login , user )

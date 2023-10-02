@@ -1,4 +1,4 @@
-FROM python:2-alpine
+FROM python:3.9-alpine
 MAINTAINER Cat'Killer <catkiller@catkiller.org>
 
 # The "exec" plugins are all written in bash and won't

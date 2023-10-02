@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 from shared.HLTypes import *
 import server.database
 
@@ -9,7 +11,7 @@ def getDatabase( type ):
 		db = eval( "mod.%s()" % cls )
 		return db
 	except ImportError:
-		print "error importing server.database.%s" % cls
+		print("error importing server.database.%s" % cls)
 		return None
 
 class HLDatabase:
