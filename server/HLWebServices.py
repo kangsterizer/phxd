@@ -1,9 +1,8 @@
-from __future__ import absolute_import
 from twisted.web import xmlrpc , server
 from twisted.internet import reactor
 from shared.HLTypes import *
 from config import *
-from six.moves.xmlrpc_client import Binary
+from xmlrpclib import Binary
 import time
 
 class HLWebServices( xmlrpc.XMLRPC ):
@@ -17,7 +16,7 @@ class HLWebServices( xmlrpc.XMLRPC ):
 	
 	def xmlrpc_getServerUptime( self ):
 		""" Returns the server uptime in seconds. """
-		return int( time.time() - self.server.startTime )
+		return long( time.time() - self.server.startTime )
 	
 	def xmlrpc_getUserlist( self ):
 		""" Returns a list of online users. Each entry is a dictionary containing user information. """

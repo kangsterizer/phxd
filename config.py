@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import os
 ################################################################################
 # database configuration
@@ -39,8 +38,8 @@ MAX_LOG_FILES = 5
 ################################################################################
 
 SERVER_PORT = 5500
-SERVER_NAME = "icedtrip2"
-SERVER_DESCRIPTION = "Yet another hotline server instance"
+SERVER_NAME = "phxd server"
+SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
 BAN_TIME = 15 * 60
 
@@ -49,13 +48,9 @@ BAN_TIME = 15 * 60
 ################################################################################
 
 # TRACKER_LIST example:
-TRACKER_LIST=[("tracker.preterhuman.net", 5499),
-              ("tracked.agent79.org", 5499),
-              ("hotline.duckdns.org", 5499),
-              ("tracked.stickytack.com", 5499),
-              ("tracked.nailbat.com", 5499),
-              ("hotline.ubersoft.org", 5499)]
-#TRACKER_LIST=[]
+#TRACKER_LIST=[("tracker.hostname.tld", 5499),
+#              ("127.0.0.1", 5499)]
+TRACKER_LIST=[]
 TRACKER_REFRESH_PERIOD=60
 
 

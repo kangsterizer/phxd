@@ -1,9 +1,7 @@
-from __future__ import absolute_import
 from shared.HLProtocol import HLCharConst
 from datetime import datetime
 from struct import *
 import os
-from six.moves import range
 
 LOG_TYPE_GENERAL =	1
 LOG_TYPE_LOGIN =	2
@@ -36,11 +34,11 @@ class HLAccount:
 	""" Stores account information. """
 	
 	def __init__( self , login = "" ):
-		self.id = 0
+		self.id = 0L
 		self.login = login
 		self.password = ""
 		self.name = "Null Account"
-		self.privs = 0
+		self.privs = 0L
 		self.fileRoot = ""
 	
 	def copyFrom( self , acct ):
@@ -64,7 +62,7 @@ class HLUser:
 		self.icon = 500
 		self.status = 0
 		self.gif = ""
-		self.color = -1
+		self.color = -1L
 		self.account = None
 		self.away = False
 		self.lastPacketTime = 0.0
@@ -85,7 +83,7 @@ class HLUser:
 	
 	def hasPriv( self , priv ):
 		""" Returns True if the account associated with the user has the specified privilege. """
-		return ( self.account != None ) and ( ( int( self.account.privs ) & priv ) > 0 )
+		return ( self.account != None ) and ( ( long( self.account.privs ) & priv ) > 0 )
        
 	def parse( self, data ):
                if len(data) < 8:
@@ -106,7 +104,7 @@ class HLUser:
 		data += pack( "!4H" , self.uid , self.icon , self.status , len( self.nick ) )
 		data += self.nick
 		# this is an avaraline extension for nick coloring
-		if self.color >= 0:
+		if self.color >= 0L:
 			data += pack( "!L" , self.color )
 		return data
 
@@ -160,7 +158,7 @@ class HLResumeData:
 	
 	def forkOffset( self , fork ):
 		""" Returns the offset for the specified fork type. """
-		if fork in self.forkOffsets:
+		if self.forkOffsets.has_key( fork ):
 			return self.forkOffsets[fork]
 		return 0
 	
@@ -184,7 +182,7 @@ class HLResumeData:
 		""" Flattens the resume information into a packed structure to send in a HLObject. """
 		data = pack( "!LH" , HLCharConst( "RFLT" ) , 1 )
 		data += ( "\0" * 34 )
-		data += pack( "!H" , len( list(self.forkOffsets.keys()) ) )
+		data += pack( "!H" , len( self.forkOffsets.keys() ) )
 		for forkType in self.forkOffsets.keys():
 			data += pack( "!4L" , forkType , self.forkOffsets[forkType] , 0 , 0 )
 		return data
@@ -193,7 +191,7 @@ class HLNewsPost:
 	""" Stores information about a single news post. """
 	
 	def __init__( self , nick = "" , login = "" , post = "" ):
-		self.id = 0
+		self.id = 0L
 		self.nick = nick
 		self.login = login
 		self.post = post
@@ -220,7 +218,7 @@ class HLPacketHandler:
 	
 	def handlePacket( self , server , user , packet ):
 		""" Default dispatcher called when a packet is received. Calls any registered handler functions. Returns True when packet is handled. """
-		if packet.type in self._funcs:
+		if self._funcs.has_key( packet.type ):
 			self._funcs[packet.type]( server , user , packet )
 			return True
 		return False

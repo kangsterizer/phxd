@@ -1,9 +1,8 @@
-from __future__ import absolute_import
 from shared.HLProtocol import *
 import time
 
 def handle( server , user , args , ref ):
-	secs = int( time.time() - server.startTime )
+	secs = long( time.time() - server.startTime )
 	days = secs / 86400
 	secs -= ( days * 86400 )
 	hours = secs / 3600

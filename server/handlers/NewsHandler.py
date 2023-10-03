@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLTypes import *
 from config import *
@@ -29,7 +28,7 @@ class NewsHandler( HLPacketHandler ):
 			news.addString( DATA_STRING , str )
 			server.sendPacket( user.uid , news )
 		else:
-			raise HLException("You are not allowed to read the news.")
+			raise HLException , "You are not allowed to read the news."
 	
 	def handleNewsPost( self , server , user , packet ):
 		str = packet.getString( DATA_STRING , "" )
@@ -42,4 +41,4 @@ class NewsHandler( HLPacketHandler ):
 				server.broadcastPacket( notify , PRIV_READ_NEWS )
 				server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 		else:
-			raise HLException("You are not allowed to post news.")
+			raise HLException , "You are not allowed to post news."

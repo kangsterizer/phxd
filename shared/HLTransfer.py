@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 from shared.HLProtocol import *
 import os , time
 
@@ -12,9 +11,9 @@ class HLTransfer:
 		self.name = os.path.basename( path )
 		self.owner = owner
 		self.type = type
-		self.total = 0
-		self.transferred = 0
-		self.offset = 0
+		self.total = 0L
+		self.transferred = 0L
+		self.offset = 0L
 		self.startTime = 0.0
 	
 	def overallPercent( self ):
@@ -52,7 +51,7 @@ class HLDownload( HLTransfer ):
 		HLTransfer.__init__( self , id , path , owner , XFER_TYPE_DOWNLOAD )
 		self.offset = offset
 		self.dataSize = os.path.getsize( path ) - offset
-		self.file = open( path , "r" )
+		self.file = file( path , "r" )
 		self.file.seek( offset )
 		self.sentHeader = False
 		self._buildHeaderData()
@@ -102,7 +101,7 @@ STATE_FORK = 2
 class HLUpload( HLTransfer ):
 	def __init__( self , id , path , owner ):
 		HLTransfer.__init__( self , id , path , owner , 1 )
-		self.file = open( path , "a" )
+		self.file = file( path , "a" )
 		self.initialSize = os.path.getsize( path )
 		self.buffer = ""
 		self.state = STATE_FILP

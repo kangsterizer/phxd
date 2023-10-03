@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLTypes import *
 from config import *
@@ -68,15 +67,15 @@ class FileHandler( HLPacketHandler ):
 		path = buildPath( user.account.fileRoot , dir )
 		
 		if not os.path.exists( path ):
-			raise HLException("The specified directory does not exist.")
+			raise HLException , "The specified directory does not exist."
 		if not os.path.isdir( path ):
-			raise HLException("The specified path is not a directory.")
+			raise HLException , "The specified path is not a directory."
 		if ( not user.hasPriv( PRIV_VIEW_DROPBOXES ) ) and ( path.upper().find( "DROP BOX" ) >= 0 ):
-			raise HLException("You are not allowed to view drop boxes.")
+			raise HLException , "You are not allowed to view drop boxes."
 		fn = path.split("/")[-1] # gets folder name kang
 		#beware of non exact matches!! FIXME
 		if (path.upper().find("DROP BOX") >= 0) and (fn.upper()[0:4] != "DROP") and (fn.upper().find(user.account.login.upper()) < 0):
-			raise HLException("Sorry, this is not your dropbox. You are not allowed to view it")
+			raise HLException, "Sorry, this is not your dropbox. You are not allowed to view it"
 		
 		reply = HLPacket( HTLS_HDR_TASK , packet.seq )
 		files = os.listdir( path )
@@ -102,9 +101,9 @@ class FileHandler( HLPacketHandler ):
 		
 		path = buildPath( user.account.fileRoot , dir , name )
 		if not user.hasPriv( PRIV_DOWNLOAD_FILES ):
-			raise HLException("You are not allowed to download files.")
+			raise HLException , "You are not allowed to download files."
 		if not os.path.exists( path ):
-			raise HLException("Specified file does not exist.")
+			raise HLException , "Specified file does not exist."
 		
 		offset = resume.forkOffset( HLCharConst( "DATA" ) )
 		xfer = server.fileserver.addDownload( user.uid , path , offset )
@@ -122,21 +121,21 @@ class FileHandler( HLPacketHandler ):
 		options = packet.getNumber( DATA_XFEROPTIONS , 0 )
 		
 		if not user.hasPriv( PRIV_UPLOAD_FILES ):
-			raise HLException("You are not allowed to upload files.")
+			raise HLException , "You are not allowed to upload files."
 		
 		path = buildPath( user.account.fileRoot , dir , name )
 		if os.path.exists( path ):
 			# If this path exists, theres already a complete file.
-			raise HLException("File already exists.")
+			raise HLException , "File already exists."
 		if ( not user.hasPriv( PRIV_UPLOAD_ANYWHERE ) ) and ( path.upper().find( "UPLOAD" ) < 0 ):
-			raise HLException("You must upload to an upload directory.")
+			raise HLException , "You must upload to an upload directory."
 		
 		# Make sure we have enough disk space to accept the file.
 		upDir = buildPath( user.account.fileRoot , dir )
 		info = os.statvfs( upDir )
 		free = info[F_BAVAIL] * info[F_FRSIZE]
 		if size > free:
-			raise HLException("Insufficient disk space.")
+			raise HLException , "Insufficient disk space."
 		
 		# All uploads in progress should have this extension.
 		path += ".hpf"
@@ -158,9 +157,9 @@ class FileHandler( HLPacketHandler ):
 		
 		path = buildPath( user.account.fileRoot , dir , name )
 		if not user.hasPriv( PRIV_DELETE_FILES ):
-			raise HLException("You are not allowed to delete files.")
+			raise HLException , "You are not allowed to delete files."
 		if not os.path.exists( path ):
-			raise HLException("Specified file does not exist.")
+			raise HLException , "Specified file does not exist."
 		
 		if os.path.isdir( path ):
 			# First, recursively delete everything inside the directory.
@@ -182,11 +181,11 @@ class FileHandler( HLPacketHandler ):
 		
 		path = buildPath( user.account.fileRoot , dir , name )
 		if not user.hasPriv( PRIV_CREATE_FOLDERS ):
-			raise HLException("You are not allowed to create folders.")
+			raise HLException , "You are not allowed to create folders."
 		if os.path.exists( path ):
-			raise HLException("Specified directory/file already exists.")
+			raise HLException , "Specified directory/file already exists."
 		
-		os.mkdir( path , 0o755 )
+		os.mkdir( path , 0755 )
 		server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 	
 	def handleFileMove( self , server , user , packet ):
@@ -198,11 +197,11 @@ class FileHandler( HLPacketHandler ):
 		newPath = buildPath( user.account.fileRoot , newDir , name )
 		
 		if not user.hasPriv( PRIV_MOVE_FILES ):
-			raise HLException("You are not allowed to move files.")
+			raise HLException , "You are not allowed to move files."
 		if not os.path.exists( oldPath ):
-			raise HLException("Invalid file or directory.")
+			raise HLException , "Invalid file or directory."
 		if os.path.exists( newPath ):
-			raise HLException("The specified file already exists.")
+			raise HLException , "The specified file already exists."
 		
 		os.rename( oldPath , newPath )
 		server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
@@ -213,7 +212,7 @@ class FileHandler( HLPacketHandler ):
 		
 		path = buildPath( user.account.fileRoot , dir , name )
 		if not os.path.exists( path ):
-			raise HLException("No such file or directory.")
+			raise HLException , "No such file or directory."
 		
 		info = HLPacket( HTLS_HDR_TASK , packet.seq )
 		info.addString( DATA_FILENAME , name )
@@ -228,15 +227,15 @@ class FileHandler( HLPacketHandler ):
 		newName = packet.getString( DATA_NEWFILE , oldName )
 		
 		if ( oldName != newName ) and ( not user.hasPriv( PRIV_RENAME_FILES ) ):
-			raise HLException("You cannot rename files.")
+			raise HLException , "You cannot rename files."
 		
 		oldPath = buildPath( user.account.fileRoot , dir , oldName )
 		newPath = buildPath( user.account.fileRoot , dir , newName )
 		
 		if not os.path.exists( oldPath ):
-			raise HLException("Invalid file or directory.")
+			raise HLException , "Invalid file or directory."
 		if os.path.exists( newPath ):
-			raise HLException("The specified file already exists.")
+			raise HLException , "The specified file already exists."
 		
 		os.rename( oldPath , newPath )
 		server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )	
