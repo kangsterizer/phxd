@@ -42,10 +42,6 @@ class HLConnection( Protocol ):
     
     def dataReceived( self , data ):
         """ Called when the socket receives data. """
-        # encoding = "utf-8"
-        # data = data.encode(encoding)
-        # data = data.decode('utf-8')
-
         self.buffer += data
         self.parseBuffer()
     
