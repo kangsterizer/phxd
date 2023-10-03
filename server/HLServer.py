@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 from twisted.internet.protocol import Factory , Protocol
 from twisted.internet import task
 from twisted.internet import reactor
@@ -29,7 +31,7 @@ class HLConnection( Protocol ):
         self.gotMagic = False
         self.isIRC = False
         self.packet = HLPacket()
-        self.buffer = ""
+        self.buffer = b''
         self.idleTimer = reactor.callLater( IDLE_TIME , self.idleCheck )
     
     def connectionLost( self , reason ):
@@ -40,6 +42,10 @@ class HLConnection( Protocol ):
     
     def dataReceived( self , data ):
         """ Called when the socket receives data. """
+        # encoding = "utf-8"
+        # data = data.encode(encoding)
+        # data = data.decode('utf-8')
+
         self.buffer += data
         self.parseBuffer()
     
@@ -144,9 +150,9 @@ class HLConnection( Protocol ):
                     self.factory.dispatchPacket( self.connID , self.packet )
             else:
                 if ( self.packet.isIRC == 0 ) and ( self.packet.type != 0 ) and ( self.packet.type != 130 ):
-                    print "got packet before login:"
-                    print self.packet
-        except HLException , ex:
+                    print("got packet before login:")
+                    print(self.packet)
+        except HLException as ex:
             # Unhandled packets and task errors will be caught here.
             if self.isIRC:
                 if self.packet.irctrap:
@@ -194,49 +200,49 @@ class HLServer( Factory ):
         self.linker = HLServerLinker( self )
         self._initLog()
         reactor.listenTCP( self.port , self )
-                # Update all trackers periodically
-                recurrentTask = task.LoopingCall(self.updateTrackers)
-                recurrentTask.start(TRACKER_REFRESH_PERIOD)
-                #recurrentTask.addErrback(updateTrackersFailed)
+        # Update all trackers periodically
+        recurrentTask = task.LoopingCall(self.updateTrackers)
+        recurrentTask.start(TRACKER_REFRESH_PERIOD)
+        #recurrentTask.addErrback(updateTrackersFailed)
     
-        def updateTrackers(self):
-            """Updates the register trackers, if any, with the name
-            and description of server and the current user count.
-            """
-            for hostname, port in TRACKER_LIST:
-                reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+    def updateTrackers(self):
+        """Updates the register trackers, if any, with the name
+        and description of server and the current user count.
+        """
+        for hostname, port in TRACKER_LIST:
+            reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
 
-        def updateTrackersFailed(self, reason):
-            """Errback invoked when the task to update the trackers
-            fails for whatever reason.
-            """
-            print "Failed to update tracker: reason"
+    def updateTrackersFailed(self, reason):
+        """Errback invoked when the task to update the trackers
+        fails for whatever reason.
+        """
+        print("Failed to update tracker: reason")
 
     def _initLog( self ):
         self.log.setLevel( logging.DEBUG )
         if ENABLE_FILE_LOG:
             # the formatter is just for the file logger
             fmt = logging.Formatter( '%(asctime)s\t%(message)s' )
-                        logSizeBytes = LOG_MAX_SIZE_MBYTES * 1024 * 1024
-                        try:
-                            fileHandler = RotatingFileHandler( LOG_FILE,
-                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
-                        except IOError:
-                            # Logfile directory most likely doesn't exist, attempt
-                            # to create it and try again.
-                            import os
-                            os.makedirs(os.path.dirname(LOG_FILE))
-                            fileHandler = logging.FileHandler( LOG_FILE,
-                                    maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
-                            # If opening the file handle fails at this point, raise
-            fileHandler.setFormatter( fmt )
-            # make sure everything goes to the file log
-            fileHandler.setLevel( logging.DEBUG )
-            self.log.addHandler( fileHandler )
-        dbHandler = HLDatabaseLogger( self.database )
-        # we only want server events and errors in the database log
-        dbHandler.setLevel( logging.INFO )
-        self.log.addHandler( dbHandler )
+            logSizeBytes = LOG_MAX_SIZE_MBYTES * 1024 * 1024
+            try:
+                fileHandler = RotatingFileHandler( LOG_FILE,
+                        maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
+            except IOError:
+                # Logfile directory most likely doesn't exist, attempt
+                # to create it and try again.
+                import os
+                os.makedirs(os.path.dirname(LOG_FILE))
+                fileHandler = logging.FileHandler( LOG_FILE,
+                        maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
+                # If opening the file handle fails at this point, raise
+                fileHandler.setFormatter( fmt )
+                # make sure everything goes to the file log
+                fileHandler.setLevel( logging.DEBUG )
+                self.log.addHandler( fileHandler )
+                dbHandler = HLDatabaseLogger( self.database )
+                # we only want server events and errors in the database log
+                dbHandler.setLevel( logging.INFO )
+                self.log.addHandler( dbHandler )
         
     def linkToServer( self, addr ):
         ( ip , port ) = addr.split( ':' )
@@ -268,7 +274,7 @@ class HLServer( Factory ):
         return user.uid
 
     def removeRemoteUser( self, uid ):
-               if self.clients.has_key( uid ):
+               if uid in self.clients:
                        del( self.clients[uid] )
     
     def handleUserLogin( self, user ):
@@ -278,18 +284,18 @@ class HLServer( Factory ):
     
     def addTempBan( self , addr , reason = "no reason" ):
         """ Adds a temporary ban for addr that will expire in BAN_TIME seconds. """
-        if not self.tempBans.has_key( addr ):
+        if addr not in self.tempBans:
             self.tempBans[addr] = reason
             reactor.callLater( BAN_TIME , self.removeTempBan , addr )
     
     def removeTempBan( self , addr ):
         """ Removes a temporary ban for addr, if it exists. """
-        if self.tempBans.has_key( addr ):
+        if addr in self.tempBans:
             del self.tempBans[addr]
     
     def checkForBan( self , addr ):
         """ Returns the reason given for a ban, if it exists. Otherwise returns None. """
-        if self.tempBans.has_key( addr ):
+        if addr in self.tempBans:
             return self.tempBans[addr]
         return self.database.checkBanlist( addr )
     
@@ -310,13 +316,13 @@ class HLServer( Factory ):
     
     def disconnectUser( self , uid ):
         """ Actively disconnect the specified user. """
-        if self.clients.has_key( uid ):
+        if uid in self.clients:
             ( conn , user ) = self.clients[uid]
             conn.transport.loseConnection()
     
     def removeConnection( self , connID ):
         """ Called from HLConnection when a connection dies. """
-        if self.clients.has_key( connID ):
+        if connID in self.clients:
             ( conn , user ) = self.clients[connID]
             if user.isLoggedIn():
                 for handler in self.handlers:
@@ -327,7 +333,7 @@ class HLServer( Factory ):
     
     def getUser( self , uid ):
         """ Gets the HLUser object for the specified uid. """
-        if self.clients.has_key( uid ):
+        if uid in self.clients:
             ( conn , user ) = self.clients[uid]
             return user
         return None
@@ -339,7 +345,7 @@ class HLServer( Factory ):
 
     def getOrderedUserlist( self ):
         """ Returns a list of HLUsers, ordered by uid. """
-        keys = self.clients.keys()
+        keys = list(self.clients.keys())
         keys.sort()
         userlist = []
         for uid in keys:
@@ -357,18 +363,18 @@ class HLServer( Factory ):
     
     def removeChat( self , id ):
         """ Remove the specified private chat. """
-        if self.chats.has_key( id ):
+        if id in self.chats:
             del self.chats[id]
     
     def getChat( self , id ):
         """ Gets the HLChat object for the specified chat ID. """
-        if self.chats.has_key( id ):
+        if id in self.chats:
             return self.chats[id]
         return None
     
     def sendPacket( self , uid , packet ):
         """ Sends the specified packet to the specified user. """
-        if self.clients.has_key( uid ):
+        if uid in self.clients:
             ( conn , user ) = self.clients[uid]
             packet.isIRC = conn.isIRC
             if user.local:
@@ -391,17 +397,17 @@ class HLServer( Factory ):
 
     def dispatchPacket( self , connID , packet ):
         """ Called from HLConnection to dispatch a packet to all registered packet handlers. """
-        if self.clients.has_key( connID ):
+        if connID in self.clients:
             handled = False
             ( conn , user ) = self.clients[connID]
             for handler in self.handlers:
                 handled |= handler.handlePacket( self , user , packet )
             if handled == False:
-                raise HLException , "unknown packet type"
+                raise HLException("unknown packet type")
 
     #def returnClients( self ):
-    #   """ For irc :p """
-    #   return self.clients
+    #	""" For irc :p """
+    #	return self.clients
     # DELETEME i think its dead code!!
 
     def logEvent( self , typeInt , msg , user = None ):
@@ -413,11 +419,11 @@ class HLServer( Factory ):
             login = user.account.login
             nickname = user.nick
             ip = user.ip
-                typeStr = str(typeInt)
-                try:
-                    typeStr = LOG_TYPE_STR_MAP[typeInt]
-                except KeyError:
-                    pass
+        typeStr = str(typeInt)
+        try:
+            typeStr = LOG_TYPE_STR_MAP[typeInt]
+        except KeyError:
+            pass
         # format as <typeStr>\t<message>\t<login>\t<nickname>\t<ip>
         # this is the "message" for the FileLogger
         fmt = "%s\t%s\t%s\t%s\t%s"

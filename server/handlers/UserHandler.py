@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLUtils import *
 from shared.HLTypes import *
@@ -28,22 +29,22 @@ class UserHandler( HLPacketHandler ):
     
     def handleLogin( self , server , user , packet ):
         if user.isLoggedIn():
-            raise HLException , ( "You are already logged in." , False )
+            raise HLException( "You are already logged in." , False)
 
         login = HLEncode( packet.getString( DATA_LOGIN , HLEncode( "guest" ) ) )
         password = HLEncode( packet.getString( DATA_PASSWORD , "" ) )
         reason = server.checkForBan( user.ip )
         
         if reason != None:
-            raise HLException , ( "You are banned: %s" % reason , True )
+            raise HLException( "You are banned: %s" % reason , True)
         
         user.account = server.database.loadAccount( login )
         if user.account == None:
-            raise HLException , ( "Login is incorrect." , True )
+            raise HLException( "Login is incorrect." , True)
         if user.account.password != md5( password ).hexdigest():
             user.nick = packet.getString( DATA_NICK , "unnamed" )
             server.logEvent( LOG_TYPE_LOGIN , "Login failure" , user )
-            raise HLException , ( "Password is incorrect." , True )
+            raise HLException( "Password is incorrect." , True)
         if user.account.fileRoot == "":
             user.account.fileRoot = FILE_ROOT
         
@@ -108,7 +109,7 @@ class UserHandler( HLPacketHandler ):
         change.addNumber( DATA_ICON , user.icon )
         change.addNumber( DATA_STATUS , user.status )
         change.addString ( DATA_IRC_OLD_NICK , oldnick )
-        if user.color >= 0L:
+        if user.color >= 0:
             change.addInt32( DATA_COLOR , user.color )
         
         server.broadcastPacket( change )    
@@ -124,12 +125,12 @@ class UserHandler( HLPacketHandler ):
         u = server.getUser( uid )
         
         if not user.hasPriv( PRIV_USER_INFO ) and ( uid != user.uid ):
-            raise HLException , "You cannot view user information."
+            raise HLException("You cannot view user information.")
         if u == None:
-            raise HLException , "Invalid user."
+            raise HLException("Invalid user.")
         
         # Format the user's idle time.
-        secs = long( time.time() - u.lastPacketTime )
+        secs = int( time.time() - u.lastPacketTime )
         days = secs / 86400
         secs -= ( days * 86400 )
         hours = secs / 3600
@@ -167,9 +168,9 @@ class UserHandler( HLPacketHandler ):
         str = packet.getString( DATA_STRING , "" )
         
         if not user.hasPriv( PRIV_SEND_MESSAGES ):
-            raise HLException , "You are not allowed to send messages."
+            raise HLException("You are not allowed to send messages.")
         if server.getUser( uid ) == None:
-            raise HLException , "Invalid user."
+            raise HLException("Invalid user.")
         
         msg = HLPacket( HTLS_HDR_MSG )
         msg.addNumber( DATA_UID , user.uid )
@@ -184,11 +185,11 @@ class UserHandler( HLPacketHandler ):
         who = server.getUser( uid )
         
         if not user.hasPriv( PRIV_KICK_USERS ):
-            raise HLException , "You are not allowed to disconnect users."
+            raise HLException("You are not allowed to disconnect users.")
         if who == None:
-            raise HLException , "Invalid user."
+            raise HLException("Invalid user.")
         if who.account.login != user.account.login and who.hasPriv( PRIV_KICK_PROTECT ):
-            raise HLException , "%s cannot be disconnected." % who.nick
+            raise HLException("%s cannot be disconnected." % who.nick)
         
         action = "Kicked"
         if ban > 0:
@@ -202,7 +203,7 @@ class UserHandler( HLPacketHandler ):
     def handleBroadcast( self , server , user , packet ):
         str = packet.getString( DATA_STRING , "" )
         if not user.hasPriv( PRIV_BROADCAST ):
-            raise HLException , "You cannot broadcast messages."
+            raise HLException("You cannot broadcast messages.")
         broadcast = HLPacket( HTLS_HDR_BROADCAST )
         broadcast.addString( DATA_STRING , str )
         server.broadcastPacket( broadcast )

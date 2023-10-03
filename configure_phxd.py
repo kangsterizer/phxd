@@ -5,6 +5,8 @@ either interactively or using a command
 TODO: This is unecessarily complex. Need to use a
 better config file format instead
 """
+from __future__ import absolute_import
+from __future__ import print_function
 __author__ = "Cat'Killer"
 __version__ = "0.0.1"
 __license__ = "WTFPL"
@@ -55,7 +57,7 @@ def rewrite_config_file(filepath, values_dict):
     """
     if not values_dict:
         return
-    keys = values_dict.keys()
+    keys = list(values_dict.keys())
     with open(filepath, 'r') as config_file:
         config_str = config_file.read()
     with tempfile.NamedTemporaryFile(delete=False) as tmpconfig:

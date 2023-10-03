@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from twisted.internet.protocol import Factory , Protocol
 from twisted.internet.interfaces import IProducer
 from twisted.internet import reactor
@@ -102,7 +103,7 @@ class HLFileServer (Factory):
     
     def findTransfer( self , xfid ):
         """ Returns the HLTransfer (HLDownload or HLUpload) object for the specified transfer ID. """
-        if self.transfers.has_key( xfid ):
+        if xfid in self.transfers:
             return self.transfers[xfid]
         return None
     
@@ -116,19 +117,19 @@ class HLFileServer (Factory):
     
     def cancelTimeout( self , id ):
         """ Cancels a pending timeout for the specified transfer. """
-        if self.timeouts.has_key( id ):
+        if id in self.timeouts:
             self.timeouts[id].cancel()
             del self.timeouts[id]
     
     def timeoutTransfer( self , id ):
         """ Called after an initial timeout to remove the dead transfer from the list of transfers. """
-        if self.transfers.has_key( id ):
+        if id in self.transfers:
             del self.timeouts[id]
             del self.transfers[id]
     
     def removeTransfer( self , xfid ):
         """ Removes a transfer from the list of transfers. """
-        if self.transfers.has_key( xfid ):
+        if xfid in self.transfers:
             info = self.transfers[xfid]
             user = self.server.getUser( info.owner )
             if user != None:

@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 from twisted.internet import reactor
 from twisted.internet.protocol import Protocol , Factory , ClientCreator
 from shared.HLProtocol import *
@@ -23,7 +25,7 @@ class LinkConnection( Protocol ):
         self.factory.linkEstablished( self )
     
     def connectionLost( self, reason ):
-        print "link connection lost"
+        print("link connection lost")
     
     def dataReceived( self, data ):
         self.buffer += data
@@ -44,11 +46,11 @@ class LinkConnection( Protocol ):
         for obj in packet.objs:
             if obj.type == DATA_UID:
                 remoteUID = unpack( "!H" , obj.data )[0]
-                if self.remoteToLocal.has_key( remoteUID ):
+                if remoteUID in self.remoteToLocal:
                     localUID = self.remoteToLocal[remoteUID]
                     obj.data = pack( "!H" , localUID )
                 else:
-                    print "ERROR: unable to map remote UID [%d]" % remoteUID
+                    print("ERROR: unable to map remote UID [%d]" % remoteUID)
     
     def handleLinkPacket( self, packet ):
         if packet.type == HTLS_HDR_LINK_LOGIN:
@@ -71,7 +73,7 @@ class LinkConnection( Protocol ):
             # a user left on the remote server
             user = HLUser()
             if user.parse( packet.getBinary(DATA_USER) ) > 0:
-                if self.remoteToLocal.has_key( user.uid ):
+                if user.uid in self.remoteToLocal:
                     localUID = self.remoteToLocal[user.uid]
                     self.factory.server.removeRemoteUser( localUID )
         elif packet.type == HTLS_HDR_LINK_PACKET:
@@ -82,17 +84,17 @@ class LinkConnection( Protocol ):
                 self.fixPacket( localPacket )
                 self.factory.server.sendPacket( localUID, localPacket )
         else:
-            print "ERROR: unknown link packet type"
+            print("ERROR: unknown link packet type")
     
     def forwardPacketData( self, data, uid ):
-        if self.localToRemote.has_key( uid ):
+        if uid in self.localToRemote:
             remoteUID = self.localToRemote[uid]
             fwdPacket = HLPacket( HTLS_HDR_LINK_PACKET )
             fwdPacket.addNumber( DATA_UID, remoteUID )
             fwdPacket.addBinary( DATA_PACKET, data )
             self.transport.write( fwdPacket.flatten() )
         else:
-            print "ERROR: unable to forward packet to local UID %d" % uid
+            print("ERROR: unable to forward packet to local UID %d" % uid)
 
 class HLServerLinker( Factory ):
     
@@ -102,15 +104,15 @@ class HLServerLinker( Factory ):
         reactor.listenTCP( LINK_PORT, self )
     
     def buildProtocol( self, addr ):
-        print "got link connection from %s" % addr.host
+        print("got link connection from %s" % addr.host)
         return LinkConnection( self )
     
     def linkEstablished( self, link ):
-        print "added link"
+        print("added link")
         self.links.append( link )
     
     def link( self, addr, port ):
-        print "linking to %s:%d" % (addr,port)
+        print("linking to %s:%d" % (addr,port))
         c = ClientCreator( reactor, LinkConnection, self )
         c.connectTCP( addr, port )
     

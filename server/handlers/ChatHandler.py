@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from shared.HLProtocol import *
 from shared.HLTypes import *
 from shared.HLUtils import *
@@ -37,7 +38,7 @@ def logChat( chat , user ):
     timestamp = time.localtime()
     fname = "%04d-%02d-%02d.txt" % ( timestamp[0] , timestamp[1] , timestamp[2] )
     path = os.path.join( LOG_DIR , fname )
-    out = file( path , "a" )
+    out = open( path , "a" )
     line = "%02d:%02d:%02d\t%s\t%s\t%s\n" % ( timestamp[3] , timestamp[4] , timestamp[5] , user.account.login , user.nick , chat )
     out.write( line )
     out.close()
@@ -112,7 +113,7 @@ class ChatHandler( HLPacketHandler ):
         who = server.getUser( uid )
         
         if not user.hasPriv( PRIV_CREATE_CHATS ):
-            raise HLException , "You cannot create private chats."
+            raise HLException("You cannot create private chats.")
         
         # First, create the new chat, adding the user.
         chat = server.createChat()
@@ -125,7 +126,7 @@ class ChatHandler( HLPacketHandler ):
         reply.addString( DATA_NICK , user.nick )
         reply.addNumber( DATA_ICON , user.icon )
         reply.addNumber( DATA_STATUS , user.status )
-        if user.color >= 0L:
+        if user.color >= 0:
             reply.addInt32( DATA_COLOR , user.color )
         server.sendPacket( user.uid , reply )
         
@@ -147,9 +148,9 @@ class ChatHandler( HLPacketHandler ):
         who = server.getUser( uid )
         
         if who == None:
-            raise HLException , "Invalid user."
+            raise HLException("Invalid user.")
         if chat == None:
-            raise HLException , "Invalid chat."
+            raise HLException("Invalid chat.")
         if uid == user.uid:
             # Ignore self invitations.
             return
@@ -157,7 +158,7 @@ class ChatHandler( HLPacketHandler ):
             # Ignore all invitations after the first.
             return
         if not chat.hasUser( user ):
-            raise HLException , "You are not in this chat."
+            raise HLException("You are not in this chat.")
         if chat.hasUser( who ):
             # The specified user is already in the chat.
             return
@@ -188,9 +189,9 @@ class ChatHandler( HLPacketHandler ):
         chat = server.getChat( ref )
         
         if chat == None:
-            raise HLException , "Invalid chat."
+            raise HLException("Invalid chat.")
         if not chat.hasInvite( user ):
-            raise HLException , "You were not invited to this chat."
+            raise HLException("You were not invited to this chat.")
         
         # Send a join packet to everyone in the chat.
         join = HLPacket( HTLS_HDR_CHAT_USER_CHANGE )
@@ -199,7 +200,7 @@ class ChatHandler( HLPacketHandler ):
         join.addString( DATA_NICK , user.nick )
         join.addNumber( DATA_ICON , user.icon )
         join.addNumber( DATA_STATUS , user.status )
-        if user.color >= 0L:
+        if user.color >= 0:
             join.addInt32( DATA_COLOR , user.color )
         for u in chat.users:
             server.sendPacket( u.uid , join )
