@@ -8,11 +8,11 @@ import server.handlers
 serv = HLServer()
 
 for modName in server.handlers.__all__:
-	try:
-		mod = __import__( "server.handlers.%s" % modName , None , None , "server.handlers" )
-		mod.installHandler( serv )
-	except ImportError:
-		print "error importing server.handlers.%s" % modName
+    try:
+        mod = __import__( "server.handlers.%s" % modName , None , None , "server.handlers" )
+        mod.installHandler( serv )
+    except ImportError:
+        print "error importing server.handlers.%s" % modName
 
 serv.logEvent( LOG_TYPE_GENERAL , "Server started on port %d" % serv.port )
 reactor.run()
