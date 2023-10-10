@@ -3,7 +3,7 @@ from shared.HLProtocol import *
 from shared.HLUtils import *
 from shared.HLTypes import *
 from config import *
-from md5 import md5
+from hashlib import md5
 import time
 
 def installHandler( server ):
@@ -41,7 +41,7 @@ class UserHandler( HLPacketHandler ):
         user.account = server.database.loadAccount( login )
         if user.account == None:
             raise HLException( "Login is incorrect." , True)
-        if user.account.password != md5( password ).hexdigest():
+        if user.account.password != md5( password.encode('mac-roman') ).hexdigest():
             user.nick = packet.getString( DATA_NICK , "unnamed" )
             server.logEvent( LOG_TYPE_LOGIN , "Login failure" , user )
             raise HLException( "Password is incorrect." , True)

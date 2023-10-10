@@ -3,7 +3,6 @@ from shared.HLProtocol import *
 from shared.HLTypes import *
 from config import *
 from struct import pack
-from statvfs import *
 import os
 
 def installHandler( server ):

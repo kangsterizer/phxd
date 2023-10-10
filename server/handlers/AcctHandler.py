@@ -3,7 +3,7 @@ from shared.HLProtocol import *
 from shared.HLTypes import *
 from config import *
 from struct import pack
-from md5 import md5
+from hashlib import md5
 
 def installHandler( server ):
     server.registerPacketHandler( AcctHandler() )
