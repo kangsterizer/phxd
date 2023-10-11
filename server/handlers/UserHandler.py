@@ -43,6 +43,7 @@ class UserHandler( HLPacketHandler ):
             raise HLException( "Login is incorrect." , True)
         if user.account.password != md5( password.encode('mac-roman') ).hexdigest():
             user.nick = packet.getString( DATA_NICK , "unnamed" )
+    
             server.logEvent( LOG_TYPE_LOGIN , "Login failure" , user )
             raise HLException( "Password is incorrect." , True)
         if user.account.fileRoot == "":

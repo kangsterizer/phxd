@@ -102,12 +102,24 @@ class HLUser:
     
     def flatten( self ):
         """ Flattens the user information into a packed structure to send in a HLObject. """
-        data = ""
-        data += pack( "!4H" , self.uid , self.icon , self.status , len( self.nick ) )
+        data = b""
+        # builtins.TypeError: can only concatenate str (not "bytes") to str
+       
+        #Significantly modified for python3
+        uid_bytes = self.uid.to_bytes(4, byteorder='big')
+        icon_bytes = self.icon.to_bytes(4, byteorder='big')
+        status_bytes = self.status.to_bytes(4, byteorder='big')
+        nick_bytes = len(self.nick).to_bytes(4, byteorder='big')
+        
+        data += uid_bytes + icon_bytes + status_bytes + nick_bytes
+
+        # data += pack( "!4H" , self.uid , self.icon , self.status , len( self.nick ) )
+
+
         data += self.nick
         # this is an avaraline extension for nick coloring
-        if self.color >= 0:
-            data += pack( "!L" , self.color )
+        # if self.color >= 0:
+            # data += pack( "!L" , self.color )
         return data
 
 class HLChat:

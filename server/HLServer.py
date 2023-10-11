@@ -42,6 +42,7 @@ class HLConnection( Protocol ):
     
     def dataReceived( self , data ):
         """ Called when the socket receives data. """
+
         self.buffer += data
         self.parseBuffer()
     
@@ -87,10 +88,13 @@ class HLConnection( Protocol ):
                     # More commands still in the buffer, parse them.
                     value = ""
                     try:
-                        cmd, value = cmds[0].split(" ", 1)
+                        # breaking and busted in here
+                        print("got in my try block")
+                        cmd, value = cmds[0].decode('mac-roman').split(" ", 1)
                     except ValueError:
                         # Value isn't defined, only parse cmd
-                        cmd = cmds[0].split(" ", 1)[0]
+                        print("got in this except?")
+                        cmd = cmds[0].decode('mac-roman').split(" ", 1)[0]
                     # Check the first command, if NICK or USER, login, else return UNKNOWN COMMAND
                     if ( cmd == "NICK" ) or ( cmd == "USER" ):
                         nick = value or "Unnamed"

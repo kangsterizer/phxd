@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from __future__ import print_function
 from struct import *
+from struct import pack
 from config import *
 import random
 import re
@@ -71,7 +72,16 @@ class HLObject:
 
     def flatten( self ):
         """ Returns a flattened, byte-swapped string for this hotline object. """
-        return pack( "!2H" , self.type , len( self.data ) ) + self.data
+        #Significantly modified
+        type_bytes = self.type.to_bytes(2, byteorder='big')
+        len_bytes = len(self.data).to_bytes(2, byteorder='big')
+        data_bytes = self.data
+        
+        if not isinstance(self.data, bytes):
+            # make it bytes
+            data_bytes = self.data.encode('mac-roman')
+        return type_bytes + len_bytes + data_bytes
+
 
 class HLPacket:
     def __init__( self , type = 0 , seq = 0 , flags = 0 , isIRC = 0 ):
@@ -429,8 +439,9 @@ class HLPacket:
         # Normal Hotline processing
         else:
             for obj in self.objs:
-                data += obj.flatten()
-            return pack( "!5L1H" , self.type , self.seq , self.flags , len( data ) + 2 , len( data ) + 2 , len( self.objs ) ) + data
+                data += obj.flatten().decode('mac-roman')
+
+            return pack( "!5L1H" , self.type , self.seq , self.flags , len( data ) + 2 , len( data ) + 2 , len( self.objs ) ) + data.encode('mac-roman')
 
 # Client packet types
 
