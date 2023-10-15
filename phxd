@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
+from __future__ import print_function
 from twisted.internet import reactor
 from server.HLServer import HLServer
 from shared.HLTypes import *
@@ -8,11 +10,11 @@ import server.handlers
 serv = HLServer()
 
 for modName in server.handlers.__all__:
-	try:
-		mod = __import__( "server.handlers.%s" % modName , None , None , "server.handlers" )
-		mod.installHandler( serv )
-	except ImportError:
-		print "error importing server.handlers.%s" % modName
+    try:
+        mod = __import__( "server.handlers.%s" % modName , None , None , "server.handlers" )
+        mod.installHandler( serv )
+    except ImportError:
+        print("error importing server.handlers.%s" % modName)
 
 serv.logEvent( LOG_TYPE_GENERAL , "Server started on port %d" % serv.port )
 reactor.run()
