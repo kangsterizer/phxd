@@ -10,7 +10,8 @@ from config import *
 class LinkConnection( Protocol ):
     def __init__( self, factory ):
         self.factory = factory
-        self.buffer = ""
+        # Buffer holds raw protocol bytes from the wire.
+        self.buffer = b""
         # maps local UIDs to remote UIDs for this link
         self.localToRemote = {}
         # maps remote UIDs to local UIDs for this link

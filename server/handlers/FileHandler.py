@@ -18,7 +18,12 @@ def parseDir( dir ):
     while ( pos < len( dir ) ) and ( count > 0 ):
         size = unpack( "!H" , dir[pos:pos+2] )[0]
         pos += 2
-        parts.append( dir[pos:pos+size] )
+        # Wire data arrives as ``bytes``; decode so callers can join with
+        # ``str`` paths (``os.sep.join`` rejects mixed bytes/str in Py3).
+        part = dir[pos:pos+size]
+        if isinstance( part , (bytes , bytearray) ):
+            part = part.decode( 'mac-roman' )
+        parts.append( part )
         pos += size + 1
         count -= 1
     return parts
@@ -28,9 +33,13 @@ def buildPath( root , dir , file = None ):
     pathArray = []
     pathArray.append( root )
     for part in dir:
+        if isinstance( part , (bytes , bytearray) ):
+            part = part.decode( 'mac-roman' )
         if ( len( part ) > 0 ) and ( part != ".." ):
             pathArray.append( part )
     if ( file != None ) and ( len( file ) > 0 ):
+        if isinstance( file , (bytes , bytearray) ):
+            file = file.decode( 'mac-roman' )
         pathArray.append( file )
     return os.sep.join( pathArray )
 
@@ -89,7 +98,10 @@ class FileHandler( HLPacketHandler ):
                     size = len( os.listdir( fpath ) )
                 else:
                     size = os.path.getsize( fpath )
-                data = pack( "!5L" , type , creator , size , size , len( fname ) ) + fname
+                # ``os.listdir`` yields ``str`` in Py3; encode the name so
+                # the trailing portion of the binary record is bytes.
+                fname_bytes = fname.encode( 'mac-roman' ) if isinstance( fname , str ) else fname
+                data = pack( "!5L" , type , creator , size , size , len( fname_bytes ) ) + fname_bytes
                 reply.addBinary( DATA_FILE , data )
         server.sendPacket( user.uid , reply )
     
@@ -109,11 +121,14 @@ class FileHandler( HLPacketHandler ):
         xfer = server.fileserver.addDownload( user.uid , path , offset )
         
         reply = HLPacket( HTLS_HDR_TASK , packet.seq )
-        reply.addNumber( DATA_XFERSIZE , xfer.total )
-        reply.addNumber( DATA_FILESIZE , xfer.dataSize )
-        reply.addNumber( DATA_XFERID , xfer.id )
+        # XFERSIZE/FILESIZE/XFERID are always 32-bit on the wire — using
+        # the auto-sizing addNumber() truncates small values to 16 bits,
+        # which the client rejects with "No reference number in reply".
+        reply.addInt32( DATA_XFERSIZE , xfer.total )
+        reply.addInt32( DATA_FILESIZE , xfer.dataSize )
+        reply.addInt32( DATA_XFERID , xfer.id )
         server.sendPacket( user.uid , reply )
-    
+
     def handleFileUpload( self , server , user , packet ):
         dir = parseDir( packet.getBinary( DATA_DIR ) )
         name = packet.getString( DATA_FILENAME , "" )
@@ -130,10 +145,13 @@ class FileHandler( HLPacketHandler ):
         if ( not user.hasPriv( PRIV_UPLOAD_ANYWHERE ) ) and ( path.upper().find( "UPLOAD" ) < 0 ):
             raise HLException("You must upload to an upload directory.")
         
-        # Make sure we have enough disk space to accept the file.
+        # Make sure we have enough disk space to accept the file. In Py3
+        # ``os.statvfs`` returns a named tuple, not an indexable mapping —
+        # the old ``F_BAVAIL`` / ``F_FRSIZE`` constants from the (removed)
+        # ``statvfs`` module are gone. Use the named attributes instead.
         upDir = buildPath( user.account.fileRoot , dir )
         info = os.statvfs( upDir )
-        free = info[F_BAVAIL] * info[F_FRSIZE]
+        free = info.f_bavail * info.f_frsize
         if size > free:
             raise HLException("Insufficient disk space.")
         
@@ -144,7 +162,8 @@ class FileHandler( HLPacketHandler ):
         if size > 0:
             xfer.total = size
         reply = HLPacket( HTLS_HDR_TASK , packet.seq )
-        reply.addNumber( DATA_XFERID , xfer.id )
+        # XFERID must be 32-bit on the wire (see handleFileDownload).
+        reply.addInt32( DATA_XFERID , xfer.id )
         if os.path.exists( path ):
             resume = HLResumeData()
             resume.setForkOffset( HLCharConst( "DATA" ) , os.path.getsize( path ) )
@@ -216,9 +235,11 @@ class FileHandler( HLPacketHandler ):
         
         info = HLPacket( HTLS_HDR_TASK , packet.seq )
         info.addString( DATA_FILENAME , name )
-        info.addNumber( DATA_FILESIZE , os.path.getsize( path ) )
-        info.addNumber( DATA_FILETYPE , getFileType( path ) )
-        info.addNumber( DATA_FILECREATOR , getFileCreator( path ) )
+        # FILESIZE/FILETYPE/FILECREATOR are 32-bit on the wire; addNumber's
+        # auto-sizing would shrink small values (or 0 for folders) to 16 bits.
+        info.addInt32( DATA_FILESIZE , os.path.getsize( path ) )
+        info.addInt32( DATA_FILETYPE , getFileType( path ) )
+        info.addInt32( DATA_FILECREATOR , getFileCreator( path ) )
         server.sendPacket( user.uid , info )
     
     def handleFileSetInfo( self , server , user , packet ):

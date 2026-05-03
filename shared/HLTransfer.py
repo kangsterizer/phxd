@@ -33,11 +33,11 @@ class HLTransfer:
     
     def parseData( self , data ):
         """ Called when data is received from a transfer. """
-        raise "Transfer does not implement parseData."
-    
+        raise NotImplementedError( "Transfer does not implement parseData." )
+
     def getDataChunk( self ):
         """ Called when writing data to a transfer. """
-        raise "Transfer does not implement getDataChunk."
+        raise NotImplementedError( "Transfer does not implement getDataChunk." )
     
     def start( self ):
         """ Called when the connection is opened. """
@@ -52,7 +52,9 @@ class HLDownload( HLTransfer ):
         HLTransfer.__init__( self , id , path , owner , XFER_TYPE_DOWNLOAD )
         self.offset = offset
         self.dataSize = os.path.getsize( path ) - offset
-        self.file = open( path , "r" )
+        # File transfers shovel binary data over the wire; opening the
+        # file in text mode would corrupt non-utf-8 content on read.
+        self.file = open( path , "rb" )
         self.file.seek( offset )
         self.sentHeader = False
         self._buildHeaderData()
@@ -84,14 +86,17 @@ class HLDownload( HLTransfer ):
     
     def _buildHeaderData( self ):
         """ Builds the header info for the file transfer, including the FILP header, INFO header and fork, and DATA header. """
+        # ``self.name`` is a regular ``str`` from ``os.path.basename``;
+        # encode it once so the header is fully ``bytes``.
+        name_bytes = self.name.encode( 'mac-roman' ) if isinstance( self.name , str ) else self.name
         self.header = pack( "!LHLLLLH" , HLCharConst( "FILP" ) , 1 , 0 , 0 , 0 , 0 , 2 )
-        self.header += pack( "!4L" , HLCharConst( "INFO" ) , 0 , 0 , 74 + len( self.name ) )
+        self.header += pack( "!4L" , HLCharConst( "INFO" ) , 0 , 0 , 74 + len( name_bytes ) )
         self.header += pack( "!5L" , HLCharConst( "AMAC" ) , HLCharConst( "????" ) , HLCharConst( "????" ) , 0 , 0 )
-        self.header += ( "\0" * 32 )
+        self.header += ( b"\0" * 32 )
         self.header += pack( "!HHL" , 0 , 0 , 0 )
         self.header += pack( "!HHL" , 0 , 0 , 0 )
-        self.header += pack( "!HH" , 0 , len( self.name ) )
-        self.header += self.name
+        self.header += pack( "!HH" , 0 , len( name_bytes ) )
+        self.header += name_bytes
         self.header += pack( "!H" , 0 )
         self.header += pack( "!4L" , HLCharConst( "DATA" ) , 0 , 0 , self.dataSize )
 
@@ -102,9 +107,11 @@ STATE_FORK = 2
 class HLUpload( HLTransfer ):
     def __init__( self , id , path , owner ):
         HLTransfer.__init__( self , id , path , owner , 1 )
-        self.file = open( path , "a" )
+        # Append-mode binary so writes don't try to text-encode incoming
+        # bytes from the upload connection.
+        self.file = open( path , "ab" )
         self.initialSize = os.path.getsize( path )
-        self.buffer = ""
+        self.buffer = b""
         self.state = STATE_FILP
         self.forkCount = 0
         self.currentFork = 0
@@ -144,7 +151,7 @@ class HLUpload( HLTransfer ):
                         # Write to the file if this is the DATA fork.
                         self.file.write( self.buffer )
                     self.forkOffset += len( self.buffer )
-                    self.buffer = ""
+                    self.buffer = b""
                     return False
                 else:
                     # We got the rest of the current fork.

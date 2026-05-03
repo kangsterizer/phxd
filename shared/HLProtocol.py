@@ -5,7 +5,6 @@ from struct import pack
 from config import *
 import random
 import re
-from six.moves import range
 
 def buildTrackerClientPacket(name, description, port, users):
     """Builds an info packet incorporating the specified name
@@ -31,15 +30,44 @@ def HLCharConst( str ):
         return 0
     return 0 + ( ord( str[0] ) << 24 ) + ( ord( str[1] ) << 16 ) + ( ord( str[2] ) << 8 ) + ord( str[3] )
 
-def HLEncode( str ):
-    """ Encodes a string based on hotline specifications; basically just
-    XORs each byte of the string. Used for logins and passwords. """
-    if str != None:
-        out = ""
-        for k in range( len( str ) ):
-            out += chr( 255 - ord( str[k] ) )
-        return out
-    return None
+def HLEncode( s ):
+    """ Encodes plaintext for the wire per Hotline 1.x spec: byte-wise
+    XOR with 0xFF. Symmetric in theory, but inbound credentials may
+    arrive XORed with 0x7F instead (see ``HLDecode``), so we keep
+    outbound at the documented mask and only auto-detect on inbound.
+    Accepts ``str`` or ``bytes`` and always returns ``bytes``. Strings
+    are interpreted as mac-roman, matching the rest of the protocol. """
+    if s is None:
+        return None
+    if isinstance( s , str ):
+        s = s.encode( 'mac-roman' )
+    return bytes( 255 - b for b in s )
+
+
+def HLDecode( s ):
+    """ Decodes XOR-encoded wire bytes for credentials. Most Hotline
+    clients use ``XOR 0xFF`` (the documented mask), but at least one
+    in-the-wild client (the Swift client at github.com/mierau/hotline)
+    encodes with ``XOR 0x7F`` instead — this drops the high bit on
+    every encoded byte, which is unmistakable: standard ``XOR 0xFF`` of
+    printable ASCII plaintext always sets bit 7, so any wire byte with
+    bit 7 clear means the sender used the alternate mask.
+
+    Returns ``bytes`` (the same length as the input). Caller is
+    responsible for decoding to ``str`` if a textual login is needed. """
+    if s is None:
+        return None
+    if isinstance( s , str ):
+        s = s.encode( 'mac-roman' )
+    if not s:
+        return b""
+    # If every wire byte has its high bit set, this is the standard
+    # mask. If every wire byte has its high bit clear, this is the
+    # 0x7F variant. Mixed inputs fall back to the standard mask.
+    high_bits = [b & 0x80 for b in s]
+    if all( bit == 0 for bit in high_bits ):
+        return bytes( 0x7F ^ b for b in s )
+    return bytes( 0xFF ^ b for b in s )
 
 def isPingType( type ):
     """ Returns True if the packet type can be considered a ping packet, i.e.
@@ -106,6 +134,10 @@ class HLPacket:
         if self.isIRC:
             if len( data ) == 0:
                 return 0
+            # Twisted hands us ``bytes`` for IRC traffic too; the IRC parsing
+            # code below works on ``str``, so decode once here.
+            if isinstance( data , (bytes , bytearray) ):
+                data = data.decode( 'mac-roman' )
             line = data.split( "\n" )[0]
             if line == "":
                 line = data.split( "\r" )[0]
@@ -260,7 +292,7 @@ class HLPacket:
         """ Wraps a number in a HLObject, byte-swapping it based
         on its magnitude, and adds it. """
         num = int( data )
-        packed = ""
+        packed = b""
         if num < ( 1 << 16 ):
             packed = pack( "!H" , num )
         elif num < ( 1 << 32 ):
@@ -293,13 +325,16 @@ class HLPacket:
         self.addString( type , data )
     
     def getString( self , type , default = None ):
-        """ Returns a string for the specified object type, or
-        a default value when the specified type is not present. """
+        """ Returns a ``str`` for the specified object type, or
+        ``default`` when the specified type is not present. The on-the-wire
+        form is decoded as mac-roman to match the rest of the protocol. """
         for obj in self.objs:
             if ( obj.type == type ) and ( len( obj.data ) > 0 ):
+                if isinstance( obj.data , (bytes , bytearray) ):
+                    return obj.data.decode( 'mac-roman' )
                 return obj.data
         return default
-    
+
     def getNumber( self , type , default = None ):
         """ Returns a byte-swapped number for the specified object type, or
         a default value when the specified type is not present. """
@@ -312,10 +347,17 @@ class HLPacket:
                 elif len( obj.data ) == 8:
                     return unpack( "!Q" , obj.data )[0]
         return default
-    
+
     def getBinary( self , type , default = None ):
-        """ Functionally equivalent to getString. """
-        return self.getString( type , default )
+        """ Returns ``bytes`` for the specified object type, or ``default``
+        when the specified type is not present. Used for raw protocol
+        payloads (XOR-encoded credentials, packed dir descriptors, GIFs). """
+        for obj in self.objs:
+            if ( obj.type == type ) and ( len( obj.data ) > 0 ):
+                if isinstance( obj.data , str ):
+                    return obj.data.encode( 'mac-roman' )
+                return bytes( obj.data )
+        return default
     
     def flatten( self , user ):
         """ Returns a flattened string of this packet and embedded objects. """
@@ -435,13 +477,15 @@ class HLPacket:
             elif self.type == HTLS_HDR_BROADCAST:
                 data = "NOTICE * :*** BROADCAST: "+self.getString( DATA_STRING )+"\r\n"
 
-            return data
+            # Twisted's transport.write requires bytes in Python 3.
+            return data.encode( 'mac-roman' ) if isinstance( data , str ) else data
         # Normal Hotline processing
         else:
+            data = b""
             for obj in self.objs:
-                data += obj.flatten().decode('mac-roman')
+                data += obj.flatten()
 
-            return pack( "!5L1H" , self.type , self.seq , self.flags , len( data ) + 2 , len( data ) + 2 , len( self.objs ) ) + data.encode('mac-roman')
+            return pack( "!5L1H" , self.type , self.seq , self.flags , len( data ) + 2 , len( data ) + 2 , len( self.objs ) ) + data
 
 # Client packet types
 

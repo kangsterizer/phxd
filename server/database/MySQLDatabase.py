@@ -4,7 +4,6 @@ from server.HLDatabase import HLDatabase
 from shared.HLTypes import *
 from config import *
 import MySQLdb
-from six.moves import range
 
 class MySQLDatabase (HLDatabase):
     """ MySQL-based implementation of HLDatabase. """

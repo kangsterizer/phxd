@@ -119,7 +119,14 @@ docker stop some_funny_name
 3. **Restart** the **phxd** container with the latest image we have just built:
 ```
 # NOTE: edit the following command according to your parameters
-docker run -v phxdvol:/app/textdb -d -p 5500:5500 -p 6667:5500 --restart=unless-stopped phxd:latest
+docker run \
+  -v phxdvol:/app/textdb \
+  -v $(pwd)/files:/app/files \
+  -d \
+  -p 5500:5500 \
+  -p 5501:5501 \
+  -p 6667:5500 \
+  phxd:latest
 ```
 *Since we are using a Docker Volume to store all of **phxd**'s user data, the server should restart in the same state and with the same logs as the previous instance, which means that it is safe to destroy running containers instances and rebuild the Docker image with changes to the code or **config.py** and will not result in lost metadata or User data.*
 

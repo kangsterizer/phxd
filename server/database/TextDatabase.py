@@ -5,11 +5,17 @@ from config import *
 from datetime import datetime
 from os import mkdir , listdir , sep
 import re
-from six.moves import range
+
+def _as_str( s ):
+    """ The account file is text — accept ``bytes`` from the wire too. """
+    if isinstance( s , (bytes , bytearray) ):
+        return s.decode( 'mac-roman' )
+    return s
+
 
 class TextDatabase (HLDatabase):
     """ Text-based implementation of HLDatabase. """
-    
+
     def __init__( self ):
         self.newsDir = DB_FILE_NEWSDIR
         self.accountsFile = DB_FILE_ACCOUNTS
@@ -29,6 +35,7 @@ class TextDatabase (HLDatabase):
     
     def loadAccount( self , login ):
         """ Creates a new HLAccount object and loads information for the specified login into it. Returns None if unsuccessful. """
+        login = _as_str( login )
         acct = None
         try:
             fp = open( self.accountsFile , "r" )
@@ -96,6 +103,7 @@ class TextDatabase (HLDatabase):
     
     def deleteAccount( self , login ):
         """ Deletes an account with the specified login. """
+        login = _as_str( login )
         try:
             fp = open( self.accountsFile , "r" )
         except IOError:
@@ -115,6 +123,7 @@ class TextDatabase (HLDatabase):
         return True
     
     def updateAccountStats( self , login , downloaded , uploaded , setDate = False ):
+        login = _as_str( login )
         try:
             fp = open( self.accountsFile , "r" )
         except IOError:

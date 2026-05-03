@@ -18,14 +18,17 @@ class IconHandler( HLPacketHandler ):
     def handleIconList( self , server , user , packet ):
         list = HLPacket( HTLS_HDR_TASK , packet.seq )
         for u in server.getOrderedUserlist():
-            data = pack( "!2H" , u.uid , len( u.gif ) ) + u.gif
+            # ``u.gif`` carries raw image bytes; default to empty bytes so
+            # the bytes ``+`` works in Py3 even before any icon is set.
+            gif = u.gif if isinstance( u.gif , (bytes , bytearray) ) else b""
+            data = pack( "!2H" , u.uid , len( gif ) ) + gif
             list.addBinary( DATA_GIFLIST , data )
         server.sendPacket( user.uid , list )
-    
+
     def handleIconSet( self , server , user , packet ):
-        user.gif = packet.getBinary( DATA_GIFICON , "" )
+        user.gif = packet.getBinary( DATA_GIFICON , b"" )
         if len( user.gif ) > MAX_GIF_SIZE:
-            user.gif = ""
+            user.gif = b""
             raise HLException("GIF icon too large.")
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
         change = HLPacket( HTLS_HDR_ICON_CHANGE )

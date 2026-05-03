@@ -3,7 +3,7 @@ from twisted.web import xmlrpc , server
 from twisted.internet import reactor
 from shared.HLTypes import *
 from config import *
-from six.moves.xmlrpc_client import Binary
+from xmlrpc.client import Binary
 import time
 
 class HLWebServices( xmlrpc.XMLRPC ):

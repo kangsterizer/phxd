@@ -7,8 +7,13 @@ def shell_exec(user, cmd, arg):
     os.environ['_IP'] = user.ip
     os.environ['_ICON'] = str(user.icon)
     os.environ['_COLOR'] = str(user.status)
-    # HACK -- Forcing user.nick to string manually here, it comes in as bytes
-    os.environ['_NICK'] = user.nick.decode('mac-roman')
+    # ``user.nick`` is normally a ``str`` after the protocol port, but in
+    # rare paths (e.g. raw bytes from the wire before parse decoded them)
+    # it can still be ``bytes``; tolerate both so the script env is sane.
+    nick = user.nick
+    if isinstance( nick , (bytes , bytearray) ):
+        nick = nick.decode( 'mac-roman' )
+    os.environ['_NICK'] = nick
     os.environ['_NAME'] = user.account.name
     os.environ['_PRIVS'] = str(user.account.privs)
     os.environ['_FROOT'] = user.account.fileRoot

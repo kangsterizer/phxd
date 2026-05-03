@@ -31,20 +31,68 @@ class UserHandler( HLPacketHandler ):
         if user.isLoggedIn():
             raise HLException( "You are already logged in." , False)
 
-        login = HLEncode( packet.getString( DATA_LOGIN , HLEncode( "guest" ) ) )
-        password = HLEncode( packet.getString( DATA_PASSWORD , "" ) )
+        # Diagnostics: dump every object so we can see exactly what the
+        # client sent (type, size, hex). Helpful when porting against
+        # third-party clients whose framing might differ subtly.
+        try:
+            for obj in packet.objs:
+                hex_data = obj.data.hex() if isinstance( obj.data , (bytes , bytearray) ) else repr( obj.data )
+                server.log.debug(
+                    "  login pkt obj type=0x%04x len=%d data=%s" ,
+                    obj.type , len( obj.data ) , hex_data ,
+                )
+        except Exception:
+            pass
+
+        # ``DATA_LOGIN`` and ``DATA_PASSWORD`` carry XOR-encoded raw bytes,
+        # not text — use ``getBinary``. ``HLDecode`` auto-detects the
+        # client's XOR mask (0xFF for classic clients, 0x7F for the
+        # Mierau Swift client) and returns plaintext ``bytes``. The login
+        # goes to the account DB which stores ``str``, so decode it; the
+        # password stays bytes for md5.
+        raw_login_wire = packet.getBinary( DATA_LOGIN , HLEncode( "guest" ) )
+        raw_pass_wire  = packet.getBinary( DATA_PASSWORD , b"" )
+        login_bytes = HLDecode( raw_login_wire )
+        password = HLDecode( raw_pass_wire )
+        # Some Hotline-1.x-era clients use the documented ``XOR 0xFF`` for
+        # logins/passwords; if a particular client doesn't, the decoded
+        # bytes won't match a real login. Log the hex of both the wire form
+        # and the post-HLEncode form so any encoding mismatch is obvious.
+        try:
+            server.log.debug(
+                "handleLogin wire bytes  login=%s password=%s" ,
+                raw_login_wire.hex() , raw_pass_wire.hex() ,
+            )
+            server.log.debug(
+                "handleLogin decoded     login=%s password=<%d bytes>" ,
+                login_bytes.hex() , len( password ) ,
+            )
+        except Exception:
+            pass
+        login = login_bytes.decode( 'mac-roman' , errors = 'replace' ) if isinstance( login_bytes , (bytes , bytearray) ) else login_bytes
+
+        server.log.debug( "handleLogin: connID-side login=%r ip=%s" , login , user.ip )
+
         reason = server.checkForBan( user.ip )
-        
+
         if reason != None:
             raise HLException( "You are banned: %s" % reason , True)
-        
+
         user.account = server.database.loadAccount( login )
         if user.account == None:
+            server.log.info( "Login failed: account %r not found" , login )
             raise HLException( "Login is incorrect." , True)
-        if user.account.password != md5( password.encode('mac-roman') ).hexdigest():
-            user.nick = packet.getString( DATA_NICK , "unnamed" )
-    
+        # ``HLEncode`` always returns ``bytes`` (the on-the-wire form)
+        # post-port, so feed those directly to md5.
+        password_for_hash = password if isinstance( password , (bytes , bytearray) ) else password.encode( 'mac-roman' )
+        if user.account.password != md5( password_for_hash ).hexdigest():
+            nick_raw = packet.getString( DATA_NICK , "unnamed" )
+            if isinstance( nick_raw , (bytes , bytearray) ):
+                nick_raw = nick_raw.decode( 'mac-roman' )
+            user.nick = nick_raw
+
             server.logEvent( LOG_TYPE_LOGIN , "Login failure" , user )
+            server.log.info( "Login failed: bad password for %r (got md5=%s, want=%s)" , login , md5( password_for_hash ).hexdigest() , user.account.password )
             raise HLException( "Password is incorrect." , True)
         if user.account.fileRoot == "":
             user.account.fileRoot = FILE_ROOT
@@ -64,8 +112,10 @@ class UserHandler( HLPacketHandler ):
         if user.isIRC:
             ( c , u ) = server.clients[user.uid]
             user.nick = user.nick.replace( " " , "_" )
-        
-            c.transport.write ( ":%s!~%s@localhost JOIN :#public\r\n" % (user.nick, user.nick) )
+
+            c.transport.write(
+                ( ":%s!~%s@localhost JOIN :#public\r\n" % (user.nick, user.nick) ).encode( 'mac-roman' )
+            )
             userlist = server.getOrderedUserlist()
             nicks = ""
             for myuser in userlist:
@@ -75,7 +125,7 @@ class UserHandler( HLPacketHandler ):
             data += ":"+IRC_SERVER_NAME+" 366 "+user.nick+" #public :End of /NAMES list.\r\n"
             data += "NOTICE AUTH:*** You have been successfull logged in !\r\n"
             data += "NOTICE *:*** You have been forced to join #public\r\n"
-            c.transport.write( data )
+            c.transport.write( data.encode( 'mac-roman' ) )
         
         # show welcome msg, needs script support in exec/login !!!
         ret = ""
@@ -130,13 +180,14 @@ class UserHandler( HLPacketHandler ):
         if u == None:
             raise HLException("Invalid user.")
         
-        # Format the user's idle time.
+        # Format the user's idle time. Use floor-division so each
+        # component stays an int — Py3's ``/`` on ints returns float.
         secs = int( time.time() - u.lastPacketTime )
-        days = secs / 86400
+        days = secs // 86400
         secs -= ( days * 86400 )
-        hours = secs / 3600
+        hours = secs // 3600
         secs -= ( hours * 3600 )
-        mins = secs / 60
+        mins = secs // 60
         secs -= ( mins * 60 )
         idle = ""
         if days > 0:
@@ -152,7 +203,7 @@ class UserHandler( HLPacketHandler ):
         xfers = server.fileserver.findTransfersForUser( uid )
         for xfer in xfers:
             type = ( "[DL]" , "[UL]" )[xfer.type]
-            speed = "%dk/sec" % ( xfer.getTotalBPS() / 1024 )
+            speed = "%dk/sec" % ( xfer.getTotalBPS() // 1024 )
             str += "%s %-27.27s\r     %d%% @ %s\r" % ( type , xfer.name , xfer.overallPercent() , speed )
         if len( xfers ) == 0:
             str += "No file transfers.\r"

@@ -3,7 +3,6 @@ from shared.HLProtocol import HLCharConst
 from datetime import datetime
 from struct import *
 import os
-from six.moves import range
 
 LOG_TYPE_GENERAL =  1
 LOG_TYPE_LOGIN =    2
@@ -63,7 +62,8 @@ class HLUser:
         self.nick = "unnamed"
         self.icon = 500
         self.status = 0
-        self.gif = ""
+        # GIF icon bytes (raw image data, never decoded as text).
+        self.gif = b""
         self.color = -1
         self.account = None
         self.away = False
@@ -88,38 +88,37 @@ class HLUser:
         return ( self.account != None ) and ( ( int( self.account.privs ) & priv ) > 0 )
        
     def parse( self, data ):
-               if len(data) < 8:
-                       return 0
-               ( self.uid, self.icon, self.status, nicklen ) = unpack( "!4H", data[0:8] )
-               if ( len(data) - 8 ) < nicklen:
-                       return 0
-               self.nick = data[8:8+nicklen]
-               if ( len(data) - 8 - nicklen ) >= 4:
-                       self.color = unpack( "!L", data[8+nicklen:12+nicklen] )[0]
-                       return ( 12 + nicklen )
-               return ( 8 + nicklen )
-    
-    
+        if len(data) < 8:
+            return 0
+        ( self.uid, self.icon, self.status, nicklen ) = unpack( "!4H", data[0:8] )
+        if ( len(data) - 8 ) < nicklen:
+            return 0
+        # ``data`` arrives as bytes from the wire; keep nick as ``str``
+        # everywhere else in the codebase, matching what the rest of the
+        # server assumes (transport writes, formatting, etc).
+        nick_raw = data[8:8+nicklen]
+        if isinstance( nick_raw , (bytes , bytearray) ):
+            self.nick = nick_raw.decode( 'mac-roman' )
+        else:
+            self.nick = nick_raw
+        if ( len(data) - 8 - nicklen ) >= 4:
+            self.color = unpack( "!L", data[8+nicklen:12+nicklen] )[0]
+            return ( 12 + nicklen )
+        return ( 8 + nicklen )
+
+
     def flatten( self ):
         """ Flattens the user information into a packed structure to send in a HLObject. """
-        data = b""
-        # builtins.TypeError: can only concatenate str (not "bytes") to str
-       
-        #Significantly modified for python3
-        uid_bytes = self.uid.to_bytes(4, byteorder='big')
-        icon_bytes = self.icon.to_bytes(4, byteorder='big')
-        status_bytes = self.status.to_bytes(4, byteorder='big')
-        nick_bytes = len(self.nick).to_bytes(4, byteorder='big')
-        
-        data += uid_bytes + icon_bytes + status_bytes + nick_bytes
-
-        # data += pack( "!4H" , self.uid , self.icon , self.status , len( self.nick ) )
-
-
-        data += self.nick
+        # Each of uid/icon/status/nicklen is a 16-bit big-endian field
+        # ("!4H"), matching what ``parse`` reads back. An earlier port
+        # attempt mistakenly packed these as 32-bit fields and broke the
+        # round-trip — keep them at 2 bytes each.
+        nick_bytes = self.nick.encode( 'mac-roman' ) if isinstance( self.nick , str ) else self.nick
+        data = pack( "!4H" , self.uid , self.icon , self.status , len( nick_bytes ) )
+        data += nick_bytes
         # this is an avaraline extension for nick coloring
         # if self.color >= 0:
-            # data += pack( "!L" , self.color )
+        #     data += pack( "!L" , self.color )
         return data
 
 class HLChat:
@@ -195,8 +194,8 @@ class HLResumeData:
     def flatten( self ):
         """ Flattens the resume information into a packed structure to send in a HLObject. """
         data = pack( "!LH" , HLCharConst( "RFLT" ) , 1 )
-        data += ( "\0" * 34 )
-        data += pack( "!H" , len( list(self.forkOffsets.keys()) ) )
+        data += ( b"\0" * 34 )
+        data += pack( "!H" , len( self.forkOffsets ) )
         for forkType in self.forkOffsets.keys():
             data += pack( "!4L" , forkType , self.forkOffsets[forkType] , 0 , 0 )
         return data

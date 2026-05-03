@@ -33,18 +33,40 @@ class HLConnection( Protocol ):
         self.packet = HLPacket()
         self.buffer = b''
         self.idleTimer = reactor.callLater( IDLE_TIME , self.idleCheck )
-    
+        try:
+            peer = self.transport.getPeer()
+            self.factory.log.info( "Client connected: %s:%s (connID=%d)" , peer.host , peer.port , self.connID )
+        except Exception:
+            pass
+
     def connectionLost( self , reason ):
         """ Called when the connection is lost. """
         if ( self.idleTimer != None ) and self.idleTimer.active():
             self.idleTimer.cancel()
+        try:
+            self.factory.log.info( "Client disconnected (connID=%d): %s" , self.connID , reason.getErrorMessage() if hasattr( reason , 'getErrorMessage' ) else reason )
+        except Exception:
+            pass
         self.factory.removeConnection( self.connID )
-    
+
     def dataReceived( self , data ):
         """ Called when the socket receives data. """
-
+        try:
+            self.factory.log.debug(
+                "dataReceived connID=%d gotMagic=%s isIRC=%s len=%d hex=%s" ,
+                self.connID , self.gotMagic , self.isIRC , len( data ) ,
+                data.hex() if isinstance( data , (bytes , bytearray) ) else '<not bytes>'
+            )
+        except Exception:
+            pass
         self.buffer += data
-        self.parseBuffer()
+        try:
+            self.parseBuffer()
+        except Exception:
+            # Don't let an exception inside parseBuffer disappear into
+            # Twisted — log it explicitly so it shows in docker logs.
+            self.factory.log.exception( "Unhandled exception in parseBuffer (connID=%d)" , self.connID )
+            self.transport.loseConnection()
     
     def parseBuffer( self ):
         """ Parses the current buffer until the buffer is empty or until no more packets can be parsed. """
@@ -52,7 +74,9 @@ class HLConnection( Protocol ):
             done = False
             while not done:
                 if self.isIRC:
-                    self.buffer = self.buffer.replace("\r", "") #FIXME is it really necessary ? it is also done during packet parsing
+                    # Buffer is ``bytes`` from Twisted's ``dataReceived``;
+                    # strip CR with a bytes literal.
+                    self.buffer = self.buffer.replace(b"\r", b"") #FIXME is it really necessary ? it is also done during packet parsing
                     self.packet.isIRC = self.isIRC
                     self.packet.connID = self.connID
                     self.packet.server = self.factory
@@ -78,7 +102,7 @@ class HLConnection( Protocol ):
                 else:
                     # Not hotline, assume IRC. Multiple commands can be chained in IRC.
                     cmds = self.buffer.splitlines()
-                    if cmds[0].startswith("CAP"):
+                    if cmds[0].startswith(b"CAP"):
                         # We received CAP LS, ignore it and read the rest of the buffer
                         # This is for compatibility with IRC v3.02 clients like irssi
                         cmds.pop(0)
@@ -100,20 +124,25 @@ class HLConnection( Protocol ):
                         nick = value or "Unnamed"
                         user = self.factory.getUser( self.connID )
                         user.nick = nick # Making sure we have the right nick.
-                        self.transport.write ( "NOTICE * :*** Welcome to Hotline\r\n" )
-                        self.transport.write ( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-                        self.transport.write ( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
-                        self.transport.write ( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
-                        self.transport.write ( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-                        self.transport.write ( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
-                        self.transport.write ( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
-                        self.transport.write ( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
+                        # Twisted's transport.write requires bytes in Py3.
+                        def _w( msg ):
+                            self.transport.write( msg.encode( 'mac-roman' ) )
+                        _w( "NOTICE * :*** Welcome to Hotline\r\n" )
+                        _w( "NOTICE AUTH :*** You are NOT logged in\r\n" )
+                        _w( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
+                        _w( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
+                        _w( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
+                        _w( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
+                        _w( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
+                        _w( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
 
                         self.isIRC = True
                         self.gotMagic = True
                         self.parseBuffer()
                     else:
-                        self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd )
+                        self.transport.write(
+                            ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd ).encode( 'mac-roman' )
+                        )
                         self.transport.loseConnection()
     
     def handlePacket( self ):
@@ -125,7 +154,9 @@ class HLConnection( Protocol ):
                 return
             if self.isIRC and self.packet.irctrap:
                 # Unsupported command, return 421
-                self.transport.write ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) )
+                self.transport.write(
+                    ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) ).encode( 'mac-roman' )
+                )
             if user.isLoggedIn():
                 # Make sure we're logged in before doing anything.
                 self.factory.dispatchPacket( self.connID , self.packet )
@@ -154,10 +185,16 @@ class HLConnection( Protocol ):
                     print(self.packet)
         except HLException as ex:
             # Unhandled packets and task errors will be caught here.
+            self.factory.log.warning(
+                "HLException on connID=%d packet.type=0x%x fatal=%s: %s" ,
+                self.connID , self.packet.type , ex.fatal , ex.msg
+            )
             if self.isIRC:
                 if self.packet.irctrap:
                     # Not sure this is still required since we already return a 421 "Unknown command" reply.
-                    self.transport.write( "NOTICE * :*** HL Error 0x%x [%s] %s\r\n"  % ( self.packet.type, self.packet.irctrap, ex.msg ))
+                    self.transport.write(
+                        ( "NOTICE * :*** HL Error 0x%x [%s] %s\r\n" % ( self.packet.type, self.packet.irctrap, ex.msg ) ).encode( 'mac-roman' )
+                    )
             else:
                 packet = HLPacket( HTLS_HDR_TASK , self.packet.seq , 1 )
                 packet.addString( DATA_ERROR , ex.msg )
@@ -165,6 +202,11 @@ class HLConnection( Protocol ):
             if ex.fatal:
                 # The exception was fatal (i.e. failed login) so kill the connection.
                 self.transport.loseConnection()
+        except Exception:
+            # Anything else is a bug — surface it instead of letting Twisted
+            # eat it.
+            self.factory.log.exception( "Unhandled error in handlePacket (connID=%d)" , self.connID )
+            self.transport.loseConnection()
     
     def idleCheck( self ):
         """ Called a set amount of time after the last non-ping packet, mark us as idle and trick the handlers into sending the change. """
@@ -219,30 +261,78 @@ class HLServer( Factory ):
         print("Failed to update tracker: reason")
 
     def _initLog( self ):
+        import os, sys
         self.log.setLevel( logging.DEBUG )
+        # Don't propagate to the root logger — we attach our own handlers.
+        self.log.propagate = False
+
+        fmt = logging.Formatter( '%(asctime)s\t%(levelname)s\t%(message)s' )
+
+        # Always stream to stdout so ``docker logs`` shows server activity.
+        # Without this, every log call goes to a file inside the container
+        # (or, worse, nowhere at all when ENABLE_FILE_LOG is off).
+        streamHandler = logging.StreamHandler( sys.stdout )
+        streamHandler.setFormatter( fmt )
+        streamHandler.setLevel( logging.DEBUG )
+        self.log.addHandler( streamHandler )
+
         if ENABLE_FILE_LOG:
-            # the formatter is just for the file logger
-            fmt = logging.Formatter( '%(asctime)s\t%(message)s' )
+            # NOTE: the previous version had setFormatter/addHandler nested
+            # inside the ``except IOError`` branch, so the rotating file
+            # handler was created but never attached when the log dir
+            # already existed. Also, ``logging.FileHandler`` doesn't take
+            # ``maxBytes``/``backupCount`` — keep ``RotatingFileHandler``
+            # for both branches.
             logSizeBytes = LOG_MAX_SIZE_MBYTES * 1024 * 1024
+            log_dir = os.path.dirname( LOG_FILE )
+            if log_dir and not os.path.isdir( log_dir ):
+                try:
+                    os.makedirs( log_dir )
+                except OSError:
+                    pass
             try:
-                fileHandler = RotatingFileHandler( LOG_FILE,
-                        maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
-            except IOError:
-                # Logfile directory most likely doesn't exist, attempt
-                # to create it and try again.
-                import os
-                os.makedirs(os.path.dirname(LOG_FILE))
-                fileHandler = logging.FileHandler( LOG_FILE,
-                        maxBytes=logSizeBytes, backupCount=MAX_LOG_FILES )
-                # If opening the file handle fails at this point, raise
+                fileHandler = RotatingFileHandler(
+                    LOG_FILE,
+                    maxBytes=logSizeBytes,
+                    backupCount=MAX_LOG_FILES,
+                )
                 fileHandler.setFormatter( fmt )
-                # make sure everything goes to the file log
                 fileHandler.setLevel( logging.DEBUG )
                 self.log.addHandler( fileHandler )
+            except (IOError, OSError) as e:
+                self.log.warning( "Could not open log file %s: %s" , LOG_FILE , e )
+
+            # Database event log (info+).
+            try:
                 dbHandler = HLDatabaseLogger( self.database )
-                # we only want server events and errors in the database log
                 dbHandler.setLevel( logging.INFO )
                 self.log.addHandler( dbHandler )
+            except Exception as e:
+                self.log.warning( "Could not attach database log handler: %s" , e )
+
+        # Bridge Twisted's own logging system to Python logging so
+        # connection/handshake errors and tracebacks from inside Twisted
+        # callbacks (e.g. unhandled exceptions in ``dataReceived``) show
+        # up in ``docker logs`` instead of being silently swallowed.
+        try:
+            from twisted.python import log as twisted_log
+            twisted_logger = logging.getLogger( "twisted" )
+            twisted_logger.setLevel( logging.DEBUG )
+            twisted_logger.propagate = False
+            twisted_logger.addHandler( streamHandler )
+
+            def _bridge( eventDict ):
+                if eventDict.get( "isError" ):
+                    msg = twisted_log.textFromEventDict( eventDict ) or ""
+                    twisted_logger.error( "%s" , msg )
+                else:
+                    msg = twisted_log.textFromEventDict( eventDict )
+                    if msg:
+                        twisted_logger.info( "%s" , msg )
+
+            twisted_log.addObserver( _bridge )
+        except Exception as e:
+            self.log.warning( "Could not bridge Twisted log: %s" , e )
         
     def linkToServer( self, addr ):
         ( ip , port ) = addr.split( ':' )
@@ -337,11 +427,13 @@ class HLServer( Factory ):
             ( conn , user ) = self.clients[uid]
             return user
         return None
-    
-        def getUserCount(self):
-            """Returns the number of logged in HLUsers."""
-            return len([user for _, user in self.clients.values()
-                        if user.isLoggedIn()])
+
+    def getUserCount( self ):
+        """ Returns the number of logged in HLUsers. """
+        # NOTE: this method was previously nested inside ``getUser`` due to
+        # over-indentation, which made it unreachable. ``HLTracker`` calls
+        # it on every tracker update.
+        return len( [user for _, user in self.clients.values() if user.isLoggedIn()] )
 
     def getOrderedUserlist( self ):
         """ Returns a list of HLUsers, ordered by uid. """
@@ -427,9 +519,12 @@ class HLServer( Factory ):
         # format as <typeStr>\t<message>\t<login>\t<nickname>\t<ip>
         # this is the "message" for the FileLogger
         fmt = "%s\t%s\t%s\t%s\t%s"
-        if type == LOG_TYPE_ERROR:
+        # NOTE: previously compared against the builtin ``type`` instead of
+        # the ``typeInt`` parameter, which meant every event went through
+        # the ``info`` branch.
+        if typeInt == LOG_TYPE_ERROR:
             self.log.error( fmt, typeStr, msg, login, nickname, ip )
-        elif type == LOG_TYPE_DEBUG:
+        elif typeInt == LOG_TYPE_DEBUG:
             self.log.debug( fmt, typeStr, msg, login, nickname, ip )
         else:
             self.log.info( fmt, typeStr, msg, login, nickname, ip )

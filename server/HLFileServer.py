@@ -15,7 +15,9 @@ class HLTransferConnection( Protocol ):
     def connectionMade( self ):
         self.info = None
         self.gotMagic = False
-        self.buffer = ""
+        # Twisted hands raw bytes to ``dataReceived``; keep the buffer
+        # bytes so concatenation and unpack on it both work in Py3.
+        self.buffer = b""
     
     def connectionLost( self , reason ):
         if self.info != None:
@@ -135,7 +137,7 @@ class HLFileServer (Factory):
             if user != None:
                 if info.isComplete():
                     type = ( "Download" , "Upload" )[info.type]
-                    speed = "%d k/sec" % ( info.getTotalBPS() / 1024 )
+                    speed = "%d k/sec" % ( info.getTotalBPS() // 1024 )
                     msg = "%s of '%s' complete (%s)" % ( type , info.name , speed )
                     self.server.logEvent( LOG_TYPE_TRANSFER , msg , user )
                 if info.type == XFER_TYPE_DOWNLOAD:

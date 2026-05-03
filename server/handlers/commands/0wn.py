@@ -12,16 +12,17 @@ def handle( server , user , arg , ref):
         server.sendPacket( user.uid , chat )
         return
 
-    try:
-        tuser = server.getUser( packet.getNumber( DATA_UID, uid ) )
-    except:
+    # NOTE: previously called ``packet.getNumber(...)`` here, but ``packet``
+    # was undefined at this point (it's created several lines below). The
+    # caller already gives us ``uid`` directly — use it.
+    tuser = server.getUser( uid )
+    if tuser is None:
         chat.addString( DATA_STRING , "\rSorry, this user does not exists." )
         server.sendPacket( user.uid , chat )
         return
-        
+
     chat.addString( DATA_STRING , "\r0wning %s, %s=%s" % (uid, var, val) )
     server.sendPacket( user.uid, chat )
-    packet = HLPacket( HTLC_HDR_USER_CHANGE )
     if ( var == "color" ):
         tuser.status = int(val)
     elif ( var == "name" ):

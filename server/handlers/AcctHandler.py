@@ -5,6 +5,13 @@ from config import *
 from struct import pack
 from hashlib import md5
 
+
+def _to_bytes( s ):
+    """ md5 in Py3 wants bytes; tolerate ``str`` callers. """
+    if isinstance( s , (bytes , bytearray) ):
+        return s
+    return s.encode( 'mac-roman' )
+
 def installHandler( server ):
     server.registerPacketHandler( AcctHandler() )
 
@@ -17,7 +24,7 @@ class AcctHandler( HLPacketHandler ):
         self.registerHandlerFunction( HTLC_HDR_ACCOUNT_DELETE , self.handleAccountDelete )
     
     def handleAccountRead( self , server , user , packet ):
-        login = packet.getString( DATA_LOGIN , "" )
+        login = packet.getBinary( DATA_LOGIN , b"" )
         
         acct = server.database.loadAccount( login )
         if not user.hasPriv( PRIV_READ_USERS ):
@@ -33,8 +40,8 @@ class AcctHandler( HLPacketHandler ):
         server.sendPacket( user.uid , reply )
     
     def handleAccountModify( self , server , user , packet ):
-        login = HLEncode( packet.getString( DATA_LOGIN , "" ) )
-        passwd = HLEncode( packet.getString( DATA_PASSWORD , "" ) )
+        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
+        passwd = HLDecode( packet.getBinary( DATA_PASSWORD , b"" ) )
         name = packet.getString( DATA_NICK , "" )
         privs = packet.getNumber( DATA_PRIVS , 0 )
         
@@ -46,16 +53,18 @@ class AcctHandler( HLPacketHandler ):
         
         acct.name = name
         acct.privs = privs
-        if passwd != "\xFF":
-            acct.password = md5( passwd ).hexdigest()
+        # The "no change" sentinel is a single 0xFF byte (HLEncode of "")
+        # — match it as bytes since ``HLEncode`` returns ``bytes`` now.
+        if passwd != b"\xFF" and passwd != "\xFF":
+            acct.password = md5( _to_bytes( passwd ) ).hexdigest()
         server.database.saveAccount( acct )
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
         server.updateAccounts( acct )
         server.logEvent( LOG_TYPE_ACCOUNT , "Modified account %s." % login , user )
     
     def handleAccountCreate( self , server , user , packet ):
-        login = HLEncode( packet.getString( DATA_LOGIN , "" ) )
-        passwd = HLEncode( packet.getString( DATA_PASSWORD , "" ) )
+        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
+        passwd = HLDecode( packet.getBinary( DATA_PASSWORD , b"" ) )
         name = packet.getString( DATA_NICK , "" )
         privs = packet.getNumber( DATA_PRIVS , 0 )
         
@@ -65,7 +74,7 @@ class AcctHandler( HLPacketHandler ):
             raise HLException("Login already exists.")
         
         acct = HLAccount( login )
-        acct.password = md5( passwd ).hexdigest()
+        acct.password = md5( _to_bytes( passwd ) ).hexdigest()
         acct.name = name
         acct.privs = privs
         
@@ -74,7 +83,7 @@ class AcctHandler( HLPacketHandler ):
         server.logEvent( LOG_TYPE_ACCOUNT , "Created account %s." % login , user )
     
     def handleAccountDelete( self , server , user , packet ):
-        login = HLEncode( packet.getString( DATA_LOGIN , "" ) )
+        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
         if not user.hasPriv( PRIV_DELETE_USERS ):
             raise HLException("You cannot delete accounts.")
         if server.database.deleteAccount( login ) < 1:

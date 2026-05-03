@@ -12,7 +12,7 @@ def handle( server , user , args , ref ):
             for xfer in server.fileserver.transfers.values():
                 type = ( "[DL]" , "[UL]" )[xfer.type]
                 u = server.getUser( xfer.owner )
-                speed = "%3dk/s" % ( xfer.getTotalBPS() / 1024 )
+                speed = "%3dk/s" % ( xfer.getTotalBPS() // 1024 )
                 owner = "<none>"
                 if u != None:
                     owner = u.nick
