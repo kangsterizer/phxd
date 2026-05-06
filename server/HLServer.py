@@ -495,6 +495,12 @@ class HLServer( Factory ):
             for handler in self.handlers:
                 handled |= handler.handlePacket( self , user , packet )
             if handled == False:
+                # Log the unknown type at INFO so we can spot what clients
+                # are sending without flooding stdout with WARNINGs every
+                # time a Hotline 1.5+ feature we don't implement gets
+                # exercised. The HLException still bubbles up so the
+                # client receives an error TASK reply.
+                self.log.info( "unknown packet type 0x%x (seq=%d) from connID=%d — ignoring" , packet.type , packet.seq , connID )
                 raise HLException("unknown packet type")
 
     #def returnClients( self ):

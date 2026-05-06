@@ -12,6 +12,15 @@ def _to_bytes( s ):
         return s
     return s.encode( 'mac-roman' )
 
+def _to_str( s ):
+    """ HLDecode returns bytes; account files / DB lookups / log lines all
+    want str. Decode via mac-roman (Hotline's text encoding). Without this,
+    ``"%s" % b'toiletj'`` writes the literal repr ``"b'toiletj'"`` into the
+    accounts file and every later lookup misses. """
+    if isinstance( s , (bytes , bytearray) ):
+        return s.decode( 'mac-roman' )
+    return s
+
 def installHandler( server ):
     server.registerPacketHandler( AcctHandler() )
 
@@ -24,8 +33,13 @@ class AcctHandler( HLPacketHandler ):
         self.registerHandlerFunction( HTLC_HDR_ACCOUNT_DELETE , self.handleAccountDelete )
     
     def handleAccountRead( self , server , user , packet ):
-        login = packet.getBinary( DATA_LOGIN , b"" )
-        
+        # Wire login is XOR-encoded just like every other DATA_LOGIN field,
+        # so it must be HLDecode'd before we hit the database. The original
+        # Py2 code skipped this step and got away with it because str/bytes
+        # were interchangeable; Py3 silently looks up the encoded gibberish
+        # and returns None → "Error loading account."
+        login = _to_str( HLDecode( packet.getBinary( DATA_LOGIN , b"" ) ) )
+
         acct = server.database.loadAccount( login )
         if not user.hasPriv( PRIV_READ_USERS ):
             raise HLException("You cannot read accounts.")
@@ -40,7 +54,7 @@ class AcctHandler( HLPacketHandler ):
         server.sendPacket( user.uid , reply )
     
     def handleAccountModify( self , server , user , packet ):
-        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
+        login = _to_str( HLDecode( packet.getBinary( DATA_LOGIN , b"" ) ) )
         passwd = HLDecode( packet.getBinary( DATA_PASSWORD , b"" ) )
         name = packet.getString( DATA_NICK , "" )
         privs = packet.getNumber( DATA_PRIVS , 0 )
@@ -63,7 +77,7 @@ class AcctHandler( HLPacketHandler ):
         server.logEvent( LOG_TYPE_ACCOUNT , "Modified account %s." % login , user )
     
     def handleAccountCreate( self , server , user , packet ):
-        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
+        login = _to_str( HLDecode( packet.getBinary( DATA_LOGIN , b"" ) ) )
         passwd = HLDecode( packet.getBinary( DATA_PASSWORD , b"" ) )
         name = packet.getString( DATA_NICK , "" )
         privs = packet.getNumber( DATA_PRIVS , 0 )
@@ -83,7 +97,7 @@ class AcctHandler( HLPacketHandler ):
         server.logEvent( LOG_TYPE_ACCOUNT , "Created account %s." % login , user )
     
     def handleAccountDelete( self , server , user , packet ):
-        login = HLDecode( packet.getBinary( DATA_LOGIN , b"" ) )
+        login = _to_str( HLDecode( packet.getBinary( DATA_LOGIN , b"" ) ) )
         if not user.hasPriv( PRIV_DELETE_USERS ):
             raise HLException("You cannot delete accounts.")
         if server.database.deleteAccount( login ) < 1:

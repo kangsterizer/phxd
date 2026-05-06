@@ -16,6 +16,13 @@ class NewsHandler( HLPacketHandler ):
         HLPacketHandler.__init__( self )
         self.registerHandlerFunction( HTLC_HDR_NEWS_GET , self.handleNewsGet )
         self.registerHandlerFunction( HTLC_HDR_NEWS_POST , self.handleNewsPost )
+        # Hotline 1.5+ threaded news. Not yet implemented — for now we
+        # acknowledge each request with an empty TASK reply so the client
+        # gets back "no categories / no articles" instead of an error.
+        # See TODO.md for the full feature work.
+        self.registerHandlerFunction( HTLC_HDR_NEWS_CAT_LIST , self.handleThreadedStub )
+        self.registerHandlerFunction( HTLC_HDR_NEWS_ART_LIST , self.handleThreadedStub )
+        self.registerHandlerFunction( HTLC_HDR_NEWS_ART_GET , self.handleThreadedStub )
     
     def handleNewsGet( self , server , user , packet ):
         limit = packet.getNumber( DATA_NEWSLIMIT , 0 )
@@ -31,6 +38,13 @@ class NewsHandler( HLPacketHandler ):
         else:
             raise HLException("You are not allowed to read the news.")
     
+    def handleThreadedStub( self , server , user , packet ):
+        """ Empty-success ack for threaded-news requests we don't yet implement.
+        The client interprets a TASK reply with no fields as "this server
+        has no categories / no articles," which is fine until we build out
+        the real feature. """
+        server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
+
     def handleNewsPost( self , server , user , packet ):
         str = packet.getString( DATA_STRING , "" )
         if user.hasPriv( PRIV_POST_NEWS ):

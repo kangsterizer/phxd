@@ -45,13 +45,27 @@ def HLEncode( s ):
 
 
 def HLDecode( s ):
-    """ Decodes XOR-encoded wire bytes for credentials. Most Hotline
-    clients use ``XOR 0xFF`` (the documented mask), but at least one
-    in-the-wild client (the Swift client at github.com/mierau/hotline)
-    encodes with ``XOR 0x7F`` instead — this drops the high bit on
-    every encoded byte, which is unmistakable: standard ``XOR 0xFF`` of
-    printable ASCII plaintext always sets bit 7, so any wire byte with
-    bit 7 clear means the sender used the alternate mask.
+    """ Decodes XOR-encoded wire bytes for credentials, or returns the
+    bytes unchanged if they look like plaintext.
+
+    Three real on-wire encodings have shown up in testing:
+
+      * ``XOR 0xFF`` — the documented Hotline 1.x mask. Used by the
+        classic Hotline client for login credentials. Encoded printable
+        ASCII always lands in ``[0x80, 0xFF]`` (bit 7 set on every byte).
+      * ``XOR 0x7F`` — the variant used by the Mierau Swift client at
+        github.com/mierau/hotline for login credentials. Encoded
+        printable ASCII always lands in ``[0x00, 0x1F]`` (control
+        bytes — bit 7 AND bit 6 clear on every byte).
+      * Plain ASCII — used by the classic client for *non-credential*
+        logins (notably ACCOUNT_READ / ACCOUNT_DELETE, where the login
+        is just a key, not a secret). Lands in the printable range.
+
+    Pick the mask by majority byte class. Very short inputs (≤2 bytes)
+    are almost always sentinels (e.g. the single-byte 0x00 "password
+    unchanged" marker that decodes to 0xFF) — for those we always use
+    the documented XOR 0xFF, since real plaintext logins of that
+    length aren't meaningful.
 
     Returns ``bytes`` (the same length as the input). Caller is
     responsible for decoding to ``str`` if a textual login is needed. """
@@ -61,13 +75,16 @@ def HLDecode( s ):
         s = s.encode( 'mac-roman' )
     if not s:
         return b""
-    # If every wire byte has its high bit set, this is the standard
-    # mask. If every wire byte has its high bit clear, this is the
-    # 0x7F variant. Mixed inputs fall back to the standard mask.
-    high_bits = [b & 0x80 for b in s]
-    if all( bit == 0 for bit in high_bits ):
+    if len( s ) <= 2:
+        return bytes( 0xFF ^ b for b in s )
+    high = sum( 1 for b in s if b >= 0x80 )
+    ctrl = sum( 1 for b in s if b < 0x20 )
+    if high > len( s ) // 2:
+        return bytes( 0xFF ^ b for b in s )
+    if ctrl > len( s ) // 2:
         return bytes( 0x7F ^ b for b in s )
-    return bytes( 0xFF ^ b for b in s )
+    # Looks like printable ASCII already — leave it alone.
+    return bytes( s )
 
 def isPingType( type ):
     """ Returns True if the packet type can be considered a ping packet, i.e.
@@ -501,6 +518,11 @@ HTLC_HDR_CHAT_DECLINE =		0x00000072
 HTLC_HDR_CHAT_JOIN =		0x00000073
 HTLC_HDR_CHAT_LEAVE =		0x00000074
 HTLC_HDR_CHAT_SUBJECT =		0x00000078
+# Sent by the client after the user clicks "Agree" on the connection
+# agreement modal. Carries the user's chosen nick/icon/status; we use
+# it to finalise the join even though our existing handleLogin path
+# has already broadcast the user-change notification.
+HTLC_HDR_AGREED =		0x00000079
 HTLC_HDR_FILE_LIST =		0x000000C8
 HTLC_HDR_FILE_GET =		0x000000CA
 HTLC_HDR_FILE_PUT =		0x000000CB
@@ -520,6 +542,22 @@ HTLC_HDR_ACCOUNT_MODIFY =	0x00000161
 HTLC_HDR_BROADCAST =		0x00000163
 HTLC_HDR_PING =			0x000001F4
 
+# Hotline 1.5+ extensions used by some clients (e.g. mierau/hotline Swift).
+# Not all servers implement these; sending a success-with-no-data TASK ack
+# is usually enough to keep the client happy and let it move on.
+HTLC_HDR_DOWNLOAD_BANNER =	0x000000D4
+
+# Threaded news (Hotline 1.5+ — distinct from the old flat news at 0x65).
+# Currently stubbed to return empty results — see TODO.md for full impl.
+HTLC_HDR_NEWS_CAT_LIST =	0x00000172
+HTLC_HDR_NEWS_ART_LIST =	0x00000173
+HTLC_HDR_NEWS_CAT_NEW =		0x00000174
+HTLC_HDR_NEWS_FLDR_NEW =	0x00000175
+HTLC_HDR_NEWS_CAT_DELETE =	0x00000178
+HTLC_HDR_NEWS_ART_GET =		0x00000190
+HTLC_HDR_NEWS_ART_POST =	0x0000019A
+HTLC_HDR_NEWS_ART_DELETE =	0x0000019B
+
 # Avaraline protocol additions
 
 HTLC_HDR_ICON_LIST =		0x00000745
@@ -531,6 +569,11 @@ HTLC_HDR_ICON_GET =		0x00000747
 HTLS_HDR_NEWS_POST =		0x00000066
 HTLS_HDR_MSG =			0x00000068
 HTLS_HDR_CHAT =			0x0000006A
+# Server→client push: the connection agreement text. Hotline clients
+# (classic 1.9, Mierau Swift) block most UI features — Chat, Files,
+# news pane — until they receive this packet, even when the body is
+# empty or the user has PRIV_NO_AGREEMENT set.
+HTLS_HDR_SHOW_AGREEMENT =	0x0000006D
 HTLS_HDR_CHAT_INVITE =		0x00000071
 HTLS_HDR_CHAT_USER_CHANGE =	0x00000075
 HTLS_HDR_CHAT_USER_LEAVE =	0x00000076

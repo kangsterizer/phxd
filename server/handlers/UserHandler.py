@@ -20,6 +20,14 @@ class UserHandler( HLPacketHandler ):
         self.registerHandlerFunction( HTLC_HDR_KICK , self.handleUserKick )
         self.registerHandlerFunction( HTLC_HDR_BROADCAST , self.handleBroadcast )
         self.registerHandlerFunction( HTLC_HDR_PING , self.handlePing )
+        # Hotline 1.5+ banner download — ack with empty TASK so the client
+        # treats "no banner" as success and stops asking. Implementing a
+        # real banner would require its own file-transfer dance.
+        self.registerHandlerFunction( HTLC_HDR_DOWNLOAD_BANNER , self.handleDownloadBanner )
+        # The "I clicked Agree" reply. Our handleLogin already broadcasts
+        # the user-join, so all this needs to do is ack — the client
+        # uses the ack as the cue to enable Chat / Files / News tabs.
+        self.registerHandlerFunction( HTLC_HDR_AGREED , self.handleAgreed )
     
     def handleUserDisconnected( self , server , user ):
         if user.isLoggedIn():
@@ -99,9 +107,41 @@ class UserHandler( HLPacketHandler ):
         
         self.handleUserChange( server , user , packet )
         
+        # The login reply must carry the user's privileges back to the
+        # client. Without ``DATA_PRIVS`` here, the classic 1.9 client
+        # assumes zero privs and gates every admin menu item client-side
+        # — "Administer Accounts," "Broadcast," etc. all just play an
+        # error sound and never send a packet to the server. The
+        # original Py2 server omitted this field; clients must have
+        # been pulling privs from somewhere else, but the canonical
+        # path is the login response. Send as int64 to match the
+        # account-read reply's encoding.
         info = HLPacket( HTLS_HDR_TASK , packet.seq )
         info.addString( DATA_SERVERNAME , SERVER_NAME )
+        info.addInt64( DATA_PRIVS , user.account.privs )
+        info.addInt16( DATA_UID , user.uid )
+        info.addInt16( DATA_VERSION , 151 )
         server.sendPacket( user.uid , info )
+        # Push the connection agreement immediately after the login ack.
+        # The classic 1.9 client (and the Mierau Swift client) blocks
+        # the Chat/Files/News tabs until this push arrives, even when
+        # the body is empty or the user has PRIV_NO_AGREEMENT. Read the
+        # text from the configured file each login so admins can edit
+        # the agreement without restarting the server. If the file is
+        # missing or unreadable, push an empty agreement so the client
+        # at least unblocks.
+        try:
+            with open( SERVER_AGREEMENT_PATH , "rb" ) as fp:
+                agreement_bytes = fp.read()
+        except ( IOError , OSError ) as e:
+            server.log.warning(
+                "agreement file %r unreadable (%s) — pushing empty agreement" ,
+                SERVER_AGREEMENT_PATH , e ,
+            )
+            agreement_bytes = b""
+        agreement = HLPacket( HTLS_HDR_SHOW_AGREEMENT )
+        agreement.addBinary( DATA_STRING , agreement_bytes )
+        server.sendPacket( user.uid , agreement )
         server.logEvent( LOG_TYPE_LOGIN , "Login successful" , user )
         server.database.updateAccountStats( login , 0 , 0 , True )
 
@@ -263,3 +303,25 @@ class UserHandler( HLPacketHandler ):
     
     def handlePing( self , server , user , packet ):
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_PING , packet.seq ) )
+
+    def handleDownloadBanner( self , server , user , packet ):
+        """ Stub for Hotline 1.5+ banner download. We don't host a banner,
+        so reply with an empty successful TASK and let the client move on.
+        """
+        server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
+
+    def handleAgreed( self , server , user , packet ):
+        """ Client→server confirmation that the user clicked Agree on the
+        connection agreement modal. Our login flow already broadcasts
+        the user-join, so this is just an ack — the client uses our
+        TASK reply as the cue to enable Chat / Files / News. The packet
+        also carries the user's chosen nick / icon / status — apply
+        them in case they differ from what we read out of the LOGIN
+        packet earlier (some clients send placeholders in LOGIN and
+        only commit final values in AGREED).
+        """
+        # If the AGREED packet carries nick/icon, treat it like a
+        # USER_CHANGE so any updates broadcast correctly.
+        if packet.getString( DATA_NICK , None ) is not None:
+            self.handleUserChange( server , user , packet )
+        server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )

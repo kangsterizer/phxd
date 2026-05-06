@@ -85,17 +85,20 @@ class TextDatabase (HLDatabase):
             for l in lines:
                 if l.split( "\t" )[0] == acct.login:
                     return False
-            # Find the largest UID then append to the account file.
+            # Find the largest UID then append to the account file. The UID
+            # column is text in the file but compared numerically — Py2 would
+            # silently order ``str > int`` by type name; Py3 raises TypeError.
+            # Coerce to int up front and skip rows that don't look like ints.
             maxuid = 0
             for l in range( len( lines ) ):
                 try:
-                    uid = lines[l].split( "\t" )[1]
-                except IndexError:
+                    uid = int( lines[l].split( "\t" )[1] )
+                except (IndexError , ValueError):
                     continue
                 else:
                     if uid > maxuid:
                         maxuid = uid
-            lines.append( "%s\t%s\t%s\t%s\t%s\t%s\t0\t0\t0000-00-00 00:00:00\n" % ( acct.login , int( maxuid ) + 1 , acct.password , acct.name , acct.privs , acct.fileRoot ) )
+            lines.append( "%s\t%s\t%s\t%s\t%s\t%s\t0\t0\t0000-00-00 00:00:00\n" % ( acct.login , maxuid + 1 , acct.password , acct.name , acct.privs , acct.fileRoot ) )
             fp = open( self.accountsFile , "w" )
             fp.write( "".join( lines ) )
             fp.close()
