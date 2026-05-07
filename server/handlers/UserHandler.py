@@ -107,32 +107,58 @@ class UserHandler( HLPacketHandler ):
         
         self.handleUserChange( server , user , packet )
         
-        # The login reply must carry the user's privileges back to the
-        # client. Without ``DATA_PRIVS`` here, the classic 1.9 client
-        # assumes zero privs and gates every admin menu item client-side
-        # — "Administer Accounts," "Broadcast," etc. all just play an
-        # error sound and never send a packet to the server. The
-        # original Py2 server omitted this field; clients must have
-        # been pulling privs from somewhere else, but the canonical
-        # path is the login response. Send as int64 to match the
-        # account-read reply's encoding.
+        # The post-login handshake is three packets, in this order. The
+        # exact field set in the LOGIN reply matters — the classic 1.9
+        # client appears to keep its "loading agreement" task pending
+        # forever if the reply is missing fields it expects. Cross-checked
+        # against Mobius (reference/mobius/hotline/server.go:593-614),
+        # which is actively maintained and known to work with the 1.9.2
+        # client, the canonical reply carries three fields:
+        #   - DATA_VERSION    (0xA0) = 190 (0x00BE) — server protocol version.
+        #     We previously sent 151; the 1.9 client may treat lower
+        #     versions as "older server" and run a different post-login
+        #     flow that doesn't unblock the agreement task.
+        #   - DATA_BANNERID   (0xA1) = [0,0] — community banner placeholder.
+        #     Even with no banner hosted, the field must be present.
+        #   - DATA_SERVERNAME (0xA2) — display name.
+        #
+        # After the reply we push:
+        #   2. tranUserAccess push (HTLS_HDR_SELFINFO, 0x162) — carries
+        #      DATA_PRIVS. The client uses this to gate admin menus
+        #      ("Administer Accounts" etc.); without it, those menus
+        #      play an error sound and refuse to open.
+        #   3. tranShowAgreement push (HTLS_HDR_SHOW_AGREEMENT, 0x6D) —
+        #      the agreement text. The client blocks Chat/Files/News
+        #      tabs until this arrives.
         info = HLPacket( HTLS_HDR_TASK , packet.seq )
+        info.addInt16( DATA_VERSION , 190 )
+        info.addInt16( DATA_BANNERID , 0 )
         info.addString( DATA_SERVERNAME , SERVER_NAME )
-        info.addInt64( DATA_PRIVS , user.account.privs )
-        info.addInt16( DATA_UID , user.uid )
-        info.addInt16( DATA_VERSION , 151 )
         server.sendPacket( user.uid , info )
-        # Push the connection agreement immediately after the login ack.
-        # The classic 1.9 client (and the Mierau Swift client) blocks
-        # the Chat/Files/News tabs until this push arrives, even when
-        # the body is empty or the user has PRIV_NO_AGREEMENT. Read the
-        # text from the configured file each login so admins can edit
-        # the agreement without restarting the server. If the file is
-        # missing or unreadable, push an empty agreement so the client
-        # at least unblocks.
+
+        access = HLPacket( HTLS_HDR_SELFINFO )
+        access.addInt64( DATA_PRIVS , user.account.privs )
+        server.sendPacket( user.uid , access )
+
+        # Read the agreement text fresh on every login so admins can edit
+        # support/agreement.txt without restarting the server. The file
+        # on disk is whatever the editor saved (typically UTF-8 with LF
+        # line endings), but Hotline clients expect mac-roman text with
+        # CR line endings — so we normalise both before pushing. If the
+        # file is missing or unreadable, push an empty body so the
+        # client at least unblocks instead of hanging forever.
         try:
             with open( SERVER_AGREEMENT_PATH , "rb" ) as fp:
-                agreement_bytes = fp.read()
+                agreement_raw = fp.read()
+            # Decode as UTF-8 first (handles non-ASCII chars like em-dashes
+            # without crashing); fall back to a replacement char for any
+            # bytes that aren't valid UTF-8.
+            agreement_text = agreement_raw.decode( 'utf-8' , errors = 'replace' )
+            # Hotline / classic Mac line endings are CR, not LF.
+            agreement_text = agreement_text.replace( '\r\n' , '\r' ).replace( '\n' , '\r' )
+            # Mac-roman is the wire encoding; replace anything outside the
+            # mac-roman set with '?' rather than crashing.
+            agreement_bytes = agreement_text.encode( 'mac-roman' , errors = 'replace' )
         except ( IOError , OSError ) as e:
             server.log.warning(
                 "agreement file %r unreadable (%s) — pushing empty agreement" ,

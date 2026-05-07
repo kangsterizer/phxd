@@ -31,6 +31,14 @@ class HLDatabase:
     def deleteAccount( self , login ):
         """ Deletes an account with the specified login from the database. """
         return False
+
+    def listAccounts( self ):
+        """ Returns a list of HLAccount objects for every account in the
+        database. Used by the "Administer Accounts" window in the client
+        (transaction 0x15C). Subclasses that don't support enumeration
+        should leave this returning [] — the admin window will just be
+        empty. """
+        return []
     
     def updateAccountStats( self , login , downloaded , uploaded , setDate = False ):
         """ Updates statistics for an account in the database. """

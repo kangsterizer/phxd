@@ -132,6 +132,18 @@ class HLPacket:
     def __init__( self , type = 0 , seq = 0 , flags = 0 , isIRC = 0 ):
         self.objs = []
         self.type = type
+        # Per the Hotline protocol spec, the transaction ID "must be != 0"
+        # (see reference/mobius/hotline/transaction.go:80 — "Unique
+        # transaction ID (must be != 0)"). Replies copy the request's
+        # ID so they always get a non-zero value, but server-pushed
+        # transactions (TranShowAgreement, TranUserAccess, chat, etc.)
+        # were going out with seq=0 because nothing was passed in.
+        # The classic 1.9 client silently drops those, which is why the
+        # "Loading Agreement" task never resolved and pushed chat
+        # messages didn't appear. Auto-assign a random non-zero ID
+        # whenever the caller didn't supply one.
+        if seq == 0:
+            seq = random.randint( 1 , 0xFFFFFFFF )
         self.seq = seq
         self.flags = flags
         self.isIRC = isIRC
@@ -539,6 +551,41 @@ HTLC_HDR_ACCOUNT_CREATE =	0x0000015E
 HTLC_HDR_ACCOUNT_DELETE =	0x0000015F
 HTLC_HDR_ACCOUNT_READ =		0x00000160
 HTLC_HDR_ACCOUNT_MODIFY =	0x00000161
+# tranListUsers (348) — sent by the client when "Administer Accounts"
+# opens. The client expects a TASK reply containing one DATA_STRING
+# (0x65) field per account on the server, where each DATA_STRING
+# payload is itself a serialized sub-packet:
+#   [2-byte field count]
+#   [DATA_NICK   (0x66) tag/len/data]   — display name
+#   [DATA_LOGIN  (0x69) tag/len/data]   — XOR-encoded login
+#   [DATA_PRIVS  (0x6E) tag/len/data]   — 8-byte access bitmap
+#   [DATA_PASSWORD (0x6A) tag/len/data] — present iff a password is set,
+#                                          value "x" as a placeholder
+# Cross-checked against Mobius (HandleListUsers in
+# reference/mobius/internal/mobius/transaction_handlers.go:697 and
+# Account.Read in reference/mobius/hotline/account.go:34).
+HTLC_HDR_ACCOUNT_LIST =		0x0000015C
+# tranUpdateUser (349) — the v1.5+ batch user editor sends this whenever
+# the user clicks "Save" in the Administer Accounts window. It can carry
+# a mix of create / modify / delete / rename operations, one per outer
+# DATA_STRING field. Each DATA_STRING payload is a serialized sub-packet:
+#   [2-byte sub-field count]
+#   [DATA_STRING   (0x65) — original login, present only on RENAME]
+#   [DATA_LOGIN    (0x69) — new/current login, always present]
+#   [DATA_NICK     (0x66) — display name]
+#   [DATA_PASSWORD (0x6A) — password, see semantics below]
+#   [DATA_PRIVS    (0x6E) — 8-byte access bitmap]
+# Operation type is inferred:
+#   * sub-field count == 1                              → DELETE
+#   * DATA_STRING present                               → RENAME (+ modify)
+#   * account exists                                    → MODIFY
+#   * account does not exist                            → CREATE
+# Password semantics (mirrored from Mobius):
+#   * DATA_PASSWORD missing entirely → clear password
+#   * DATA_PASSWORD == single 0x00   → leave password unchanged
+#   * DATA_PASSWORD == anything else → set new password
+# Reply: empty TASK ack.
+HTLC_HDR_ACCOUNT_UPDATE =	0x0000015D
 HTLC_HDR_BROADCAST =		0x00000163
 HTLC_HDR_PING =			0x000001F4
 
@@ -612,6 +659,12 @@ DATA_BAN =		0x0071
 DATA_CHATID =		0x0072
 DATA_SUBJECT =		0x0073
 DATA_VERSION =		0x00A0
+# Community banner ID — sent in the LOGIN TASK reply alongside DATA_VERSION /
+# DATA_SERVERNAME. Mobius and other modern Hotline servers send a 2-byte
+# placeholder ([0,0]) here even when no community banner is hosted; the
+# classic 1.9 client appears to require the field to consider the LOGIN
+# response complete and unblock the agreement-loading task.
+DATA_BANNERID =		0x00A1
 DATA_SERVERNAME =	0x00A2
 DATA_FILE =		0x00C8
 DATA_FILENAME =		0x00C9

@@ -104,6 +104,34 @@ class TextDatabase (HLDatabase):
             fp.close()
         return True
     
+    def listAccounts( self ):
+        """ Reads every account row from the text DB and returns a list
+        of fully-populated HLAccount objects. Used by handleAccountList
+        (the "Administer Accounts" admin window). Skips malformed rows
+        rather than aborting — a single broken line shouldn't make the
+        whole admin window unusable. """
+        accounts = []
+        try:
+            fp = open( self.accountsFile , "r" )
+        except IOError:
+            return accounts
+        for l in fp.readlines():
+            parts = l.rstrip( "\n" ).split( "\t" )
+            if len( parts ) < 6:
+                continue
+            try:
+                acct = HLAccount( parts[0] )
+                acct.id = int( parts[1] )
+                acct.password = parts[2]
+                acct.name = parts[3]
+                acct.privs = int( parts[4] )
+                acct.fileRoot = parts[5]
+            except ValueError:
+                continue
+            accounts.append( acct )
+        fp.close()
+        return accounts
+
     def deleteAccount( self , login ):
         """ Deletes an account with the specified login. """
         login = _as_str( login )

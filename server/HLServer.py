@@ -221,7 +221,17 @@ class HLConnection( Protocol ):
     def writePacket( self , packet ):
         """ Flattens and writes a packet out to the socket. """
         packet.server = self.factory
-        self.transport.write( packet.flatten(  self.factory.getUser( self.connID ) ) )
+        flat = packet.flatten( self.factory.getUser( self.connID ) )
+        try:
+            self.factory.log.debug(
+                "writePacket connID=%d type=0x%x seq=%d nfields=%d len=%d hex=%s" ,
+                self.connID , packet.type , packet.seq ,
+                len( packet.objs ) , len( flat ) ,
+                flat.hex() if isinstance( flat , (bytes , bytearray) ) else '<not bytes>' ,
+            )
+        except Exception:
+            pass
+        self.transport.write( flat )
 
 class HLServer( Factory ):
     """ Factory subclass that handles all global server operations. Also owns database and fileserver objects. """

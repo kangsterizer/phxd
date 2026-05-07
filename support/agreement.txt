@@ -1,6 +1,7 @@
 Welcome to this phxd server.
 
 By connecting you agree to behave reasonably and follow any rules set by
-the server administrator. Edit support/agreement.txt to customise this
-text — Hotline clients display it in the connection agreement window
-before letting you in.
+the server administrator.
+
+Edit support/agreement.txt to customise this text - Hotline clients
+display it in the connection agreement window before letting you in.
