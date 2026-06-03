@@ -1,0 +1,15 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+twisted = ">=26.4.0"
+
+[dev-packages]
+pytest = ">=9"
+pytest-cov = ">=7"
+pytest-xdist = ">=3.8"
+
+[requires]
+python_version = "3.14"

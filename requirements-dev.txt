@@ -2,8 +2,8 @@
 # for the binary protocol layer, and we want CI runtime measured in
 # seconds. Pin majors to keep behaviour stable but allow patch bumps.
 -r requirements.txt
-pytest>=8,<9
-pytest-cov>=5,<6
+pytest>=9,<10
+pytest-cov>=7,<8
 # pytest-xdist runs tests across multiple workers in parallel. The unit
 # suite is small enough today that single-process is faster (worker
 # startup ≈ 0.5s, the whole suite finishes in 30ms), but as we add
@@ -11,4 +11,4 @@ pytest-cov>=5,<6
 # execution will start paying off. The pytest.ini ``-n auto`` flag
 # picks worker count = CPU count by default; override with ``-n 0`` for
 # a serial run when debugging a single test.
-pytest-xdist>=3,<4
+pytest-xdist>=3.8,<4
