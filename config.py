@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import os
 ################################################################################
 # database configuration
@@ -42,6 +43,13 @@ SERVER_NAME = "phxd server"
 SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
 BAN_TIME = 15 * 60
+
+# Path (relative to the server working directory or absolute) to a plain-
+# text file containing the connection agreement. The classic 1.9 client
+# and most modern clients block Chat/Files/News until they receive this
+# push from the server. If the file is missing or empty the server still
+# pushes an empty agreement so the client unblocks.
+SERVER_AGREEMENT_PATH = "support/agreement.txt"
 
 ################################################################################
 # tracker client options
