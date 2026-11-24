@@ -339,7 +339,8 @@ class UserHandler( HLPacketHandler ):
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
     
     def handlePing( self , server , user , packet ):
-        if user.isIRC:
+        # packet.isIRC also covers IRC clients that PING before logging in.
+        if packet.isIRC or user.isIRC:
             # Flattened into an IRC PONG echoing the PING's token.
             pong = HLPacket( HTLS_HDR_PING , packet.seq )
             token = packet.getString( DATA_STRING )

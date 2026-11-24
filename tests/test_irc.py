@@ -377,3 +377,9 @@ class TestKeepaliveReplies:
         replies = hl.replies()
         assert (HTLS_HDR_TASK, seq, 0) in replies
         assert not any(t == HTLS_HDR_PING for t, _, _ in replies)
+
+    def test_irc_ping_before_login_is_answered(self, irc_server):
+        client = irc_server.irc_client()
+        client.register("early")
+        client.send("PING :before-login")
+        assert client.take() == ["PONG phxd :before-login"]
