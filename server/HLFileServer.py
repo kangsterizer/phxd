@@ -7,9 +7,10 @@ from server.HLDatabase import *
 from shared.HLTypes import *
 from shared.HLTransfer import *
 from config import *
+from server.HLTLS import GracefulCloseMixin
 import os
 
-class HLTransferConnection( Protocol ):
+class HLTransferConnection( GracefulCloseMixin , Protocol ):
     #__implements__ = Protocol.__implements__ + ( IProducer , )
     
     def connectionMade( self ):
@@ -20,6 +21,7 @@ class HLTransferConnection( Protocol ):
         self.buffer = b""
     
     def connectionLost( self , reason ):
+        self.connectionClosed()
         if self.info != None:
             self.info.finish()
             self.factory.removeTransfer( self.info.id )
@@ -31,10 +33,14 @@ class HLTransferConnection( Protocol ):
             if ( self.info != None ) and ( self.info.type == XFER_TYPE_UPLOAD ):
                 self.info.parseData( data )
                 if self.info.isComplete():
-                    # The upload is done, it's our job to close the connection.
-                    self.transport.loseConnection()
+                    # The upload is done: store the file now (finish() is
+                    # safe to call again from connectionLost) rather than
+                    # when the connection is gone, which over TLS waits for
+                    # the client's close_notify. Then close the connection.
+                    self.info.finish()
+                    self.closeConnection()
             else:
-                self.transport.loseConnection()
+                self.closeConnection()
         else:
             # Make sure we buffer at this point in case we don't get the
             # HTXF magic all at once, or get more than just the magic.
@@ -47,7 +53,7 @@ class HLTransferConnection( Protocol ):
                 self.info = self.factory.findTransfer( xfid )
                 if self.info == None:
                     # Invalid xfer ID, kill the connection.
-                    self.transport.loseConnection()
+                    self.closeConnection()
                 else:
                     if self.info.type == XFER_TYPE_UPLOAD:
                         if self.info.total == 0:
@@ -86,6 +92,10 @@ class HLFileServer (Factory):
         self.transfers = {}
         self.timeouts = {}
         reactor.listenTCP( self.port , self )
+
+    def listenTLS( self , port , contextFactory ):
+        """ Accepts file transfers over TLS on ``port`` too. """
+        reactor.listenSSL( port , self , contextFactory )
     
     def addUpload( self , owner , path ):
         """ Adds an upload to the list of transfers. """

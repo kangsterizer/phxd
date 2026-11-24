@@ -1,0 +1,42 @@
+# Example phxd configuration overrides.
+#
+# Copy to phxd.yaml (next to config.py), or point the PHXD_CONFIG
+# environment variable at your file. Any setting from config.py can be
+# overridden here, written in lower case; settings you leave out keep their
+# config.py defaults. In Docker, mount the file into the container:
+#
+#   docker run ... -v $(pwd)/phxd.yaml:/app/phxd.yaml:ro ... phxd:latest
+#
+# and restart the container after editing it.
+
+server_name: "phxd server"
+server_description: "Yet another phxd server instance"
+# server_port: 5500
+
+# Hotline trackers to register with: "host:port", or just "host" for the
+# default tracker port 5499.
+tracker_list: []
+#  - tracker.preterhuman.net:5499
+#  - hotline.duckdns.org:5499
+#  - tracked.stickytack.com:5499
+#  - tracked.nailbat.com:5499
+#  - hotline.ubersoft.org:5499
+
+# Logging: always to stdout ("docker logs"), and to log_file when
+# enable_file_log is true. log_level: DEBUG, INFO, WARNING, ERROR, CRITICAL.
+log_level: INFO
+# enable_file_log: true
+
+# IRC
+# irc_server_name: "phxd"
+# Seconds before an IRC client that hasn't logged in is logged in as guest
+# (0 disables automatic guest login).
+# irc_guest_login_delay: 5
+
+# TLS: one certificate for all TLS ports, reloaded automatically when
+# renewed. Hotline over TLS conventionally uses 5600 (file transfers on
+# 5601) and IRC over TLS 6697; 0 disables a port.
+# tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
+# tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem
+# hotline_tls_port: 5600
+# irc_tls_port: 6697

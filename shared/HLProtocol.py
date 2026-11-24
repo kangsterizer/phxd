@@ -6,22 +6,78 @@ from config import *
 import random
 import re
 
-def buildTrackerClientPacket(name, description, port, users):
+# Defaults for options missing from older config.py files.
+try:
+    IRC_GUEST_LOGIN_DELAY
+except NameError:
+    IRC_GUEST_LOGIN_DELAY = 5
+try:
+    LOG_LEVEL
+except NameError:
+    LOG_LEVEL = "INFO"
+try:
+    TCP_KEEPALIVE_IDLE
+except NameError:
+    TCP_KEEPALIVE_IDLE = 60
+    TCP_KEEPALIVE_INTERVAL = 15
+    TCP_KEEPALIVE_COUNT = 4
+    TCP_USER_TIMEOUT = 90
+try:
+    IRC_TLS_PORT
+except NameError:
+    IRC_TLS_PORT = 0
+try:
+    HOTLINE_TLS_PORT
+except NameError:
+    HOTLINE_TLS_PORT = 0
+try:
+    TLS_CERT
+except NameError:
+    TLS_CERT = ""
+    TLS_KEY = ""
+
+# Source prefix for notices from the (virtual) NickServ service.
+NICKSERV_PREFIX = ":NickServ!NickServ@services"
+
+def buildTrackerClientPacket(name, description, port, users, tlsPort=0):
     """Builds an info packet incorporating the specified name
-    and description ASCII strings and user numbers integer.
+    and description strings and user numbers integer.
+    ``tlsPort`` is the Hotline TLS port, if any: it goes in the two bytes
+    after the user count (always zero before), which trackers pass on to
+    clients, as Mobius does.
+    ``name`` and ``description`` may be ``str`` (encoded as mac-roman,
+    like the rest of the protocol) or ``bytes``; each is truncated to
+    the 255 bytes a one-byte length prefix can describe.
     """
-    return b'\x00\x01%s%s\x00\x00%s%s%s%s%s\x00' % (
-            pack('>H', port), pack('>H', users), pack("I",
-            random.randint(0, 4294967295)), pack('b', len(name)),
-            name, pack('b', len(description)), description)
+    def _field(value):
+        if isinstance(value, str):
+            value = value.encode('mac-roman', errors='replace')
+        value = bytes(value)[:255]
+        return pack('B', len(value)) + value
+    return b'\x00\x01%s%s%s%s%s%s\x00' % (
+            pack('>H', port), pack('>H', users), pack('>H', tlsPort), pack("I",
+            random.randint(0, 4294967295)), _field(name),
+            _field(description))
+
+# Characters not allowed in IRC nicknames (RFC 2812: letters, digits and -[]\`^{}|_).
+IRC_NICK_INVALID = re.compile( r'[^A-Za-z0-9\-\[\]\\`^{}|_]' )
+
+def ircSafeNick( nick ):
+    """ Converts a Hotline nickname into a valid IRC nickname. Apostrophes become
+    backticks (the closest valid look-alike) and other invalid characters are
+    dropped, rather than truncating the nick at the first invalid character. """
+    if isinstance( nick , (bytes , bytearray) ):
+        nick = nick.decode( 'mac-roman' )
+    nick = ( nick or "" ).replace( "'" , "`" )
+    return IRC_NICK_INVALID.sub( "" , nick )
+
+def ircNick( uid , nick ):
+    """ Returns the IRC nickname of a user: <uid>_<sanitized nick>. """
+    return str( uid ) + "_" + ircSafeNick( nick )
 
 def ircCheckUserNick( user ):
     """ Check for nick conformance to IRC standards and rename a correct one """
-    nickname = ""
-    nickname = user.nick.replace(" ", "")
-    nickname = re.search('^([0-9-A-z]*)', nickname).group(0)
-    nickname = str(user.uid)+"_"+nickname
-    return nickname
+    return ircNick( user.uid , user.nick )
 
 def HLCharConst( str ):
     """ Returns the numeric equivalent of a 4-character string (OSType in classic Mac OS).
@@ -149,6 +205,10 @@ class HLPacket:
         self.isIRC = isIRC
         self.server = None
         self.irctrap = ""
+        # IRC-only: a CAP subcommand for HLConnection to answer, and a raw
+        # reply line to send back to the client.
+        self.irccap = None
+        self.ircreply = ""
         self.connID = 0
     
     def __str__( self ):
@@ -157,6 +217,38 @@ class HLPacket:
             s += "\n  " + str( obj )
         return s
     
+    def _ircNick( self ):
+        """ Returns the IRC nick of the connection this packet came from. """
+        try:
+            user = self.server.getUser( self.connID )
+            if user and user.nick:
+                return user.nick
+        except AttributeError:
+            pass
+        return "*"
+
+    def _ircLogin( self , login , password ):
+        """ Turns this IRC line into a Hotline login packet. """
+        self.type = HTLC_HDR_LOGIN
+        self.addString( DATA_LOGIN , HLEncode( login ) )
+        self.addString( DATA_PASSWORD , HLEncode( password ) )
+
+    def _parseNickServ( self , text ):
+        """ Handles a message to NickServ. Supports the usual services syntax:
+        ``IDENTIFY <password>`` (account = current nick) and
+        ``IDENTIFY <account> <password>``. """
+        if text.startswith( ":" ):
+            text = text[1:]
+        words = text.strip().split( None , 2 )
+        if words and words[0].upper() in ( "IDENTIFY" , "LOGIN" ) and len( words ) >= 2:
+            if len( words ) == 3:
+                self._ircLogin( words[1] , words[2] )
+            else:
+                self._ircLogin( self._ircNick() , words[1] )
+        else:
+            self.ircreply = ( "%s NOTICE %s :Usage: IDENTIFY <password> or IDENTIFY <account> <password>\r\n"
+                % ( NICKSERV_PREFIX , self._ircNick() ) )
+
     def parse( self , data ):
         """ Tries to parse an entire packet from the data passed in. If successful,
         returns the number of bytes parsed, otherwise returns 0. """
@@ -182,8 +274,48 @@ class HLPacket:
             
             elif cmd == "PING":
                 self.type = HTLC_HDR_PING
+                # Keep the token so the PONG can echo it back; clients
+                # use it to match replies (lag measurement).
+                token = line.split( " " , 1 )[1] if " " in line else ""
+                if token.startswith( ":" ):
+                    token = token[1:]
+                if token:
+                    self.addString( DATA_STRING , token )
             
             elif cmd.startswith("LAGTIME"):
+                return len( line )
+
+            elif cmd == "USER":
+                # Registration is handled during the IRC handshake.
+                return len( line )
+
+            elif cmd == "CAP":
+                # Answered by HLConnection; we support no IRCv3 capabilities.
+                parts = line.split( " " , 2 )
+                if len( parts ) > 1:
+                    self.irccap = ( parts[1].upper() , parts[2] if len( parts ) > 2 else "" )
+                return len( line )
+
+            elif cmd == "PASS":
+                # Server password: "account:password", or "password" for the
+                # account matching the nick.
+                if " " in line:
+                    arg = line.split( " " , 1 )[1]
+                    if arg.startswith( ":" ):
+                        arg = arg[1:]
+                    if ":" in arg:
+                        login , password = arg.split( ":" , 1 )
+                        self._ircLogin( login , password )
+                    else:
+                        self._ircLogin( self._ircNick() , arg )
+                return len( line )
+
+            elif cmd in ( "NICKSERV" , "NS" ):
+                self._parseNickServ( line.split( " " , 1 )[1] if " " in line else "" )
+                return len( line )
+
+            elif cmd == "PONG":
+                # Keepalive replies from IRC clients; nothing to do.
                 return len( line )
             
             elif cmd == "PRIVMSG":
@@ -208,8 +340,11 @@ class HLPacket:
                         print("handle that")
                 # Private Message
                 else:
-                    # Authentication "bot"
-                    if line.split( " " , 2 )[1] == "loginserv":
+                    # Authentication "bots"
+                    if line.split( " " , 2 )[1].lower() == "nickserv":
+                        parts = line.split( " " , 2 )
+                        self._parseNickServ( parts[2] if len( parts ) > 2 else "" )
+                    elif line.split( " " , 2 )[1] == "loginserv":
                         self.type = HTLC_HDR_LOGIN
                         loginStr = line.split(" ", 3)[2]
                         if loginStr.startswith(":"):
@@ -393,7 +528,9 @@ class HLPacket:
         data = ""
         if self.isIRC:
             if self.type == HTLS_HDR_PING:
-                data = "PONG :"+IRC_SERVER_NAME+"\r\n"
+                # RFC 2812: PONG <server> :<token from the PING>
+                token = self.getString( DATA_STRING , IRC_SERVER_NAME )
+                data = "PONG "+IRC_SERVER_NAME+" :"+token+"\r\n"
             
             elif self.type == HTLS_HDR_CHAT:
                 try:
@@ -405,8 +542,8 @@ class HLPacket:
                     # this should be hanlded already elsewhere but forgot :(
                     if user.uid == u.uid:
                         return data
-                    mynick = ircCheckUserNick( u )
-                    mynick = u.nick.replace( " " , "" )
+                    # Public chat shows the plain nick, without the uid prefix.
+                    mynick = ircSafeNick( u.nick )
                 except KeyError:
                     mynick = "PHXD"
                 chatid = self.getNumber( DATA_CHATID )
@@ -449,7 +586,7 @@ class HLPacket:
                         if user.uid == u.uid:
                             data = ":"+oldnick+"!~"+oldnick+"@"+u.ip+" NICK :"+user.nick+"\r\n"
                         else:
-                            data = ":"+str( u.uid )+"_"+oldnick.replace( " " , "" )+" NICK "+ircCheckUserNick( u )+"\r\n"
+                            data = ":"+ircNick( u.uid , oldnick )+" NICK "+ircCheckUserNick( u )+"\r\n"
                         
             elif self.type == HTLS_HDR_TASK:
                 # check for HTLC_HDR_USER_LIST reply:
@@ -500,7 +637,7 @@ class HLPacket:
                 chatid = self.getNumber( DATA_CHATID)
                 uid = self.getNumber( DATA_UID )
                 ( c , u ) = self.server.clients[uid]
-                mynick = ircCheckUserNick( self.getString( DATA_NICK ) )
+                mynick = ircNick( uid , self.getString( DATA_NICK , u.nick ) )
                 data = ":"+mynick+"!~"+mynick+"@"+u.ip+" JOIN :#"+str(chatid)+"\r\n"
 
             elif self.type == HTLS_HDR_BROADCAST:

@@ -21,6 +21,18 @@ class MySQLDatabase (HLDatabase):
         cur.close()
         return acct
     
+    def findLogin( self , login ):
+        """ Returns the stored login matching the specified login case-insensitively,
+        or None if there is no match or the match is ambiguous (several
+        accounts differing only by case). """
+        cur = self.db.cursor()
+        cur.execute( "SELECT login FROM accounts WHERE LOWER( login ) = LOWER( %s )" , login )
+        rows = cur.fetchall()
+        cur.close()
+        if len( rows ) == 1:
+            return rows[0][0]
+        return None
+
     def saveAccount( self , acct ):
         cur = self.db.cursor()
         if acct.id > 0:

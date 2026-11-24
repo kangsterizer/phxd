@@ -11,7 +11,10 @@ from server.HLWebServices import *
 from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
 from server.HLTracker import HLTrackerClient
+from server.HLTLS import GracefulCloseMixin
+import os
 import sys
+import socket
 #from twisted.logger import globalLogBeginner, textFileLogObserver
 #globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)])
 
@@ -19,7 +22,46 @@ from config import *
 import time , logging
 from logging.handlers import RotatingFileHandler
 
-class HLConnection( Protocol ):
+def findSocket( transport , maxDepth = 5 ):
+    """ Returns the OS socket under a Twisted transport, unwrapping TLS
+    (TLSMemoryBIOProtocol / BufferingTLSTransport) layers, or None. """
+    for _ in range( maxDepth ):
+        if transport is None:
+            return None
+        sock = getattr( transport , "socket" , None )
+        if isinstance( sock , socket.socket ):
+            return sock
+        nextTransport = getattr( transport , "transport" , None )
+        if nextTransport is None:
+            nextTransport = getattr( getattr( transport , "_protocol" , None ) , "transport" , None )
+        transport = nextTransport
+    return None
+
+def enableDeadPeerDetection( sock , idle = None , interval = None , count = None , userTimeout = None ):
+    """ Enables TCP keepalive and the TCP user timeout on ``sock`` so
+    connections whose peer vanished (network drop, sleep, NAT timeout)
+    are closed within minutes instead of lingering. Options the platform
+    lacks are skipped. Returns the options that were set. """
+    idle = TCP_KEEPALIVE_IDLE if idle is None else idle
+    interval = TCP_KEEPALIVE_INTERVAL if interval is None else interval
+    count = TCP_KEEPALIVE_COUNT if count is None else count
+    userTimeout = TCP_USER_TIMEOUT if userTimeout is None else userTimeout
+    applied = {}
+    if idle > 0:
+        sock.setsockopt( socket.SOL_SOCKET , socket.SO_KEEPALIVE , 1 )
+        applied["SO_KEEPALIVE"] = 1
+        for name , value in ( ( "TCP_KEEPIDLE" , idle ) , ( "TCP_KEEPINTVL" , interval ) , ( "TCP_KEEPCNT" , count ) ):
+            option = getattr( socket , name , None )
+            if option is not None and value > 0:
+                sock.setsockopt( socket.IPPROTO_TCP , option , int( value ) )
+                applied[name] = int( value )
+    option = getattr( socket , "TCP_USER_TIMEOUT" , None )
+    if option is not None and userTimeout > 0:
+        sock.setsockopt( socket.IPPROTO_TCP , option , int( userTimeout * 1000 ) )
+        applied["TCP_USER_TIMEOUT"] = int( userTimeout * 1000 )
+    return applied
+
+class HLConnection( GracefulCloseMixin , Protocol ):
     """ Protocol subclass to handle parsing and dispatching of raw hotline data. """
     
     def __init__( self , factory , connID ):
@@ -32,7 +74,15 @@ class HLConnection( Protocol ):
         self.isIRC = False
         self.packet = HLPacket()
         self.buffer = b''
+        self.capReplied = False
+        self.guestTimer = None
         self.idleTimer = reactor.callLater( IDLE_TIME , self.idleCheck )
+        try:
+            sock = findSocket( self.transport )
+            if sock is not None:
+                enableDeadPeerDetection( sock )
+        except OSError as e:
+            self.factory.log.warning( "Could not enable dead connection detection: %s" , e )
         try:
             peer = self.transport.getPeer()
             self.factory.log.info( "Client connected: %s:%s (connID=%d)" , peer.host , peer.port , self.connID )
@@ -41,8 +91,11 @@ class HLConnection( Protocol ):
 
     def connectionLost( self , reason ):
         """ Called when the connection is lost. """
+        self.connectionClosed()
         if ( self.idleTimer != None ) and self.idleTimer.active():
             self.idleTimer.cancel()
+        if ( self.guestTimer != None ) and self.guestTimer.active():
+            self.guestTimer.cancel()
         try:
             self.factory.log.info( "Client disconnected (connID=%d): %s" , self.connID , reason.getErrorMessage() if hasattr( reason , 'getErrorMessage' ) else reason )
         except Exception:
@@ -66,7 +119,7 @@ class HLConnection( Protocol ):
             # Don't let an exception inside parseBuffer disappear into
             # Twisted — log it explicitly so it shows in docker logs.
             self.factory.log.exception( "Unhandled exception in parseBuffer (connID=%d)" , self.connID )
-            self.transport.loseConnection()
+            self.closeConnection()
     
     def parseBuffer( self ):
         """ Parses the current buffer until the buffer is empty or until no more packets can be parsed. """
@@ -101,62 +154,122 @@ class HLConnection( Protocol ):
                         self.parseBuffer()
                 else:
                     # Not hotline, assume IRC. Multiple commands can be chained in IRC.
-                    cmds = self.buffer.splitlines()
-                    if cmds[0].startswith(b"CAP"):
-                        # We received CAP LS, ignore it and read the rest of the buffer
-                        # This is for compatibility with IRC v3.02 clients like irssi
-                        cmds.pop(0)
-                    # If there are no further commands, close the connection.
-                    if not cmds:
-                        self.transport.loseConnection()
-                    # More commands still in the buffer, parse them.
-                    value = ""
-                    try:
-                        # breaking and busted in here
-                        print("got in my try block")
-                        cmd, value = cmds[0].decode('mac-roman').split(" ", 1)
-                    except ValueError:
-                        # Value isn't defined, only parse cmd
-                        print("got in this except?")
-                        cmd = cmds[0].decode('mac-roman').split(" ", 1)[0]
-                    # Check the first command, if NICK or USER, login, else return UNKNOWN COMMAND
-                    if ( cmd == "NICK" ) or ( cmd == "USER" ):
-                        nick = value or "Unnamed"
-                        user = self.factory.getUser( self.connID )
-                        user.nick = nick # Making sure we have the right nick.
-                        # Twisted's transport.write requires bytes in Py3.
-                        def _w( msg ):
-                            self.transport.write( msg.encode( 'mac-roman' ) )
-                        _w( "NOTICE * :*** Welcome to Hotline\r\n" )
-                        _w( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-                        _w( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
-                        _w( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
-                        _w( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-                        _w( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
-                        _w( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
-                        _w( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
-
-                        self.isIRC = True
-                        self.gotMagic = True
-                        self.parseBuffer()
+                    # Only look at complete lines; CAP and PASS may precede NICK/USER.
+                    text = self.buffer.decode( 'mac-roman' )
+                    cmds = [ c.rstrip( "\r" ) for c in text.split( "\n" )[:-1] ]
+                    names = [ c.split( " " , 1 )[0].upper() for c in cmds ]
+                    if ( "NICK" not in names ) and ( "USER" not in names ):
+                        if not cmds:
+                            # Wait for a complete line.
+                            return
+                        unexpected = [ n for n in names if n not in ( "CAP" , "PASS" ) ]
+                        if unexpected:
+                            self.ircWrite( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % unexpected[0] )
+                            self.closeConnection()
+                            return
+                        # Only capability negotiation / server password so far:
+                        # answer CAP LS and wait for the client to register.
+                        self.ircReplyCapLS( cmds )
+                        return
+                    nick = "Unnamed"
+                    for c in cmds:
+                        parts = c.split( " " , 1 )
+                        if parts[0].upper() == "NICK" and len( parts ) > 1 and parts[1].strip( ": " ):
+                            nick = parts[1].strip( ": " )
+                            break
+                    # Answer CAP LS before the welcome so clients finish negotiation.
+                    self.ircReplyCapLS( cmds )
+                    user = self.factory.getUser( self.connID )
+                    user.nick = nick # Making sure we have the right nick.
+                    self.ircWrite( "NOTICE * :*** Welcome to Hotline\r\n" )
+                    self.ircWrite( "NOTICE AUTH :*** You are NOT logged in\r\n" )
+                    self.ircWrite( "NOTICE AUTH :*** Log in with '/msg NickServ IDENTIFY <login> <password>', a server password of '<login>:<password>', or '/msg loginserv <login> <password>'.\r\n" )
+                    if IRC_GUEST_LOGIN_DELAY > 0:
+                        self.ircWrite( "NOTICE AUTH :*** Otherwise you will be logged in as guest in %d seconds.\r\n" % IRC_GUEST_LOGIN_DELAY )
                     else:
-                        self.transport.write(
-                            ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd ).encode( 'mac-roman' )
-                        )
-                        self.transport.loseConnection()
+                        self.ircWrite( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
+
+                    self.isIRC = True
+                    self.gotMagic = True
+                    if IRC_GUEST_LOGIN_DELAY > 0:
+                        self.guestTimer = reactor.callLater( IRC_GUEST_LOGIN_DELAY , self.ircAutoGuest )
+                    self.parseBuffer()
+
+    def ircWrite( self , text ):
+        """ Writes a line of IRC text (str) to the client. Twisted's
+        transport.write requires bytes in Python 3. """
+        self.transport.write( text.encode( 'mac-roman' , errors = 'replace' ) )
+
+    def ircNotice( self , text , sender = NICKSERV_PREFIX ):
+        """ Sends a NOTICE to this IRC client. """
+        user = self.factory.getUser( self.connID )
+        nick = ( user and user.nick ) or "*"
+        self.ircWrite( "%s NOTICE %s :%s\r\n" % ( sender , nick , text ) )
+
+    def ircReplyCapLS( self , cmds ):
+        """ Replies to a CAP LS found among the handshake lines, if any. """
+        for c in cmds:
+            parts = c.split( " " , 2 )
+            if parts[0].upper() == "CAP" and len( parts ) > 1 and parts[1].upper() == "LS":
+                self.ircHandleCap( "LS" , "" , "*" )
+
+    def ircHandleCap( self , sub , arg , nick ):
+        """ Minimal IRCv3 capability negotiation: we support no capabilities. """
+        if sub == "LS":
+            if not self.capReplied:
+                self.capReplied = True
+                self.ircWrite( ":"+IRC_SERVER_NAME+" CAP %s LS :\r\n" % nick )
+        elif sub == "REQ":
+            if arg.startswith( ":" ):
+                arg = arg[1:]
+            self.ircWrite( ":"+IRC_SERVER_NAME+" CAP %s NAK :%s\r\n" % ( nick , arg ) )
+
+    def ircAutoGuest( self ):
+        """ Logs an IRC client in as guest if it has not logged in by itself. """
+        self.guestTimer = None
+        user = self.factory.getUser( self.connID )
+        if ( not user ) or user.isLoggedIn():
+            return
+        if self.factory.database.loadAccount( "guest" ) == None:
+            self.ircNotice( "No guest account on this server, please IDENTIFY to log in." )
+            return
+        packet = HLPacket( HTLC_HDR_LOGIN , 0 , 0 , 1 )
+        packet.addString( DATA_LOGIN , HLEncode( "guest" ) )
+        packet.addString( DATA_PASSWORD , HLEncode( "" ) )
+        user.isIRC = True
+        user.lastPacketTime = time.time()
+        try:
+            self.factory.dispatchPacket( self.connID , packet )
+        except HLException as ex:
+            # Don't disconnect; the client can still IDENTIFY.
+            self.ircNotice( "Guest login failed: %s" % ex.msg )
     
     def handlePacket( self ):
         """ Dispatch the packet to the factory (and its listeners) and check to see if we should update our away status. """
         try:
             user = self.factory.getUser( self.connID )
             if not user:
-                self.transport.loseConnection()
+                self.closeConnection()
                 return
+            if self.isIRC and self.packet.irccap:
+                self.ircHandleCap( self.packet.irccap[0] , self.packet.irccap[1] , user.nick )
+                return
+            if self.isIRC and self.packet.ircreply:
+                self.ircWrite( self.packet.ircreply )
             if self.isIRC and self.packet.irctrap:
                 # Unsupported command, return 421
                 self.transport.write(
                     ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) ).encode( 'mac-roman' )
                 )
+                return
+            if self.isIRC and self.packet.type == 0:
+                # Consumed IRC line with nothing to dispatch (PONG, LAGTIME, ...).
+                # Ignore it so it neither errors nor resets the idle timer.
+                return
             if user.isLoggedIn():
                 # Make sure we're logged in before doing anything.
                 self.factory.dispatchPacket( self.connID , self.packet )
@@ -189,7 +302,9 @@ class HLConnection( Protocol ):
                 "HLException on connID=%d packet.type=0x%x fatal=%s: %s" ,
                 self.connID , self.packet.type , ex.fatal , ex.msg
             )
-            if self.isIRC:
+            if self.isIRC and self.packet.type == HTLC_HDR_LOGIN:
+                self.ircNotice( "Login failed: %s" % ex.msg )
+            elif self.isIRC:
                 if self.packet.irctrap:
                     # Not sure this is still required since we already return a 421 "Unknown command" reply.
                     self.transport.write(
@@ -201,12 +316,12 @@ class HLConnection( Protocol ):
                 self.writePacket( packet )
             if ex.fatal:
                 # The exception was fatal (i.e. failed login) so kill the connection.
-                self.transport.loseConnection()
+                self.closeConnection()
         except Exception:
             # Anything else is a bug — surface it instead of letting Twisted
             # eat it.
             self.factory.log.exception( "Unhandled error in handlePacket (connID=%d)" , self.connID )
-            self.transport.loseConnection()
+            self.closeConnection()
     
     def idleCheck( self ):
         """ Called a set amount of time after the last non-ping packet, mark us as idle and trick the handlers into sending the change. """
@@ -251,18 +366,64 @@ class HLServer( Factory ):
         self.log = logging.getLogger( "phxd" )
         self.linker = HLServerLinker( self )
         self._initLog()
+        self._ensureFileRoot()
         reactor.listenTCP( self.port , self )
+        self.setupTLS( HOTLINE_TLS_PORT , IRC_TLS_PORT , TLS_CERT , TLS_KEY )
         # Update all trackers periodically
         recurrentTask = task.LoopingCall(self.updateTrackers)
         recurrentTask.start(TRACKER_REFRESH_PERIOD)
         #recurrentTask.addErrback(updateTrackersFailed)
     
+    def setupTLS( self , hotlinePort , ircPort , certPath , keyPath ):
+        """ Starts the TLS listeners: Hotline over TLS on ``hotlinePort``
+        with TLS file transfers on the port after it, and IRC over TLS on
+        ``ircPort`` (0 disables either). All share one certificate, which
+        is reloaded when its files change. Exits with a readable error if
+        TLS is enabled but the certificate can't be loaded. Returns the
+        context factory, or None when TLS is disabled. """
+        ports = [ p for p in ( hotlinePort , ircPort ) if p ]
+        if not ports:
+            return None
+        from server.HLTLS import ReloadingTLSContextFactory , TLSConfigError
+        if not certPath or not keyPath:
+            raise SystemExit( "phxd: configuration error: a TLS port is set but tls_cert / tls_key are not" )
+        try:
+            contextFactory = ReloadingTLSContextFactory( certPath , keyPath , self.log )
+        except TLSConfigError as e:
+            raise SystemExit( "phxd: configuration error: %s" % e )
+        # The listener detects Hotline vs IRC per connection, so one
+        # listener serves both if the two ports are the same.
+        for port in sorted( set( ports ) ):
+            reactor.listenSSL( port , self , contextFactory )
+            self.log.info( "Listening for TLS connections on port %d" , port )
+        if hotlinePort:
+            self.fileserver.listenTLS( hotlinePort + 1 , contextFactory )
+            self.log.info( "Listening for TLS file transfers on port %d" , hotlinePort + 1 )
+        return contextFactory
+
+    def _ensureFileRoot( self ):
+        """ Creates the shared files directory if it is missing; otherwise
+        every file listing fails with "The specified directory does not
+        exist." (e.g. a fresh Docker container without a files mount). """
+        if FILE_ROOT and not os.path.isdir( FILE_ROOT ):
+            try:
+                os.makedirs( FILE_ROOT )
+                self.log.info( "Created shared files directory %s" , FILE_ROOT )
+            except OSError as e:
+                self.log.warning( "Could not create shared files directory %s: %s" , FILE_ROOT , e )
+
     def updateTrackers(self):
         """Updates the register trackers, if any, with the name
         and description of server and the current user count.
         """
         for hostname, port in TRACKER_LIST:
-            reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+            # One failing tracker must not raise out of the LoopingCall,
+            # which would stop all future tracker updates.
+            try:
+                reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+            except Exception as e:
+                self.logEvent(LOG_TYPE_TRACKER, "Failed to update tracker {}:"
+                              " {}".format(hostname, e))
 
     def updateTrackersFailed(self, reason):
         """Errback invoked when the task to update the trackers
@@ -283,7 +444,7 @@ class HLServer( Factory ):
         # (or, worse, nowhere at all when ENABLE_FILE_LOG is off).
         streamHandler = logging.StreamHandler( sys.stdout )
         streamHandler.setFormatter( fmt )
-        streamHandler.setLevel( logging.DEBUG )
+        streamHandler.setLevel( getattr( logging , LOG_LEVEL , logging.INFO ) )
         self.log.addHandler( streamHandler )
 
         if ENABLE_FILE_LOG:
@@ -307,7 +468,7 @@ class HLServer( Factory ):
                     backupCount=MAX_LOG_FILES,
                 )
                 fileHandler.setFormatter( fmt )
-                fileHandler.setLevel( logging.DEBUG )
+                fileHandler.setLevel( getattr( logging , LOG_LEVEL , logging.INFO ) )
                 self.log.addHandler( fileHandler )
             except (IOError, OSError) as e:
                 self.log.warning( "Could not open log file %s: %s" , LOG_FILE , e )
@@ -336,9 +497,12 @@ class HLServer( Factory ):
                     msg = twisted_log.textFromEventDict( eventDict ) or ""
                     twisted_logger.error( "%s" , msg )
                 else:
+                    # Twisted's informational messages ("Starting protocol",
+                    # "(UDP Port ... Closed)", ... several per tracker update)
+                    # are only useful when debugging.
                     msg = twisted_log.textFromEventDict( eventDict )
                     if msg:
-                        twisted_logger.info( "%s" , msg )
+                        twisted_logger.debug( "%s" , msg )
 
             twisted_log.addObserver( _bridge )
         except Exception as e:
@@ -418,7 +582,7 @@ class HLServer( Factory ):
         """ Actively disconnect the specified user. """
         if uid in self.clients:
             ( conn , user ) = self.clients[uid]
-            conn.transport.loseConnection()
+            conn.closeConnection()
     
     def removeConnection( self , connID ):
         """ Called from HLConnection when a connection dies. """

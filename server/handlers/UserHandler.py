@@ -87,6 +87,14 @@ class UserHandler( HLPacketHandler ):
             raise HLException( "You are banned: %s" % reason , True)
 
         user.account = server.database.loadAccount( login )
+        if user.account == None and user.isIRC:
+            # IRC nicks are case-insensitive and NickServ / server-password
+            # logins often use the nick as the account name, so match
+            # case-insensitively (Hotline logins stay exact).
+            storedLogin = server.database.findLogin( login )
+            if storedLogin != None:
+                login = storedLogin
+                user.account = server.database.loadAccount( login )
         if user.account == None:
             server.log.info( "Login failed: account %r not found" , login )
             raise HLException( "Login is incorrect." , True)
@@ -94,7 +102,8 @@ class UserHandler( HLPacketHandler ):
         # post-port, so feed those directly to md5.
         password_for_hash = password if isinstance( password , (bytes , bytearray) ) else password.encode( 'mac-roman' )
         if user.account.password != md5( password_for_hash ).hexdigest():
-            nick_raw = packet.getString( DATA_NICK , "unnamed" )
+            # IRC logins carry no nick; keep the one the user already has.
+            nick_raw = packet.getString( DATA_NICK , user.nick or "unnamed" )
             if isinstance( nick_raw , (bytes , bytearray) ):
                 nick_raw = nick_raw.decode( 'mac-roman' )
             user.nick = nick_raw
@@ -189,8 +198,8 @@ class UserHandler( HLPacketHandler ):
                     nicks += " "+ircCheckUserNick( myuser )
             data = ":"+IRC_SERVER_NAME+" 353 "+user.nick+" = #public :"+ircCheckUserNick( user )+nicks+"\r\n"
             data += ":"+IRC_SERVER_NAME+" 366 "+user.nick+" #public :End of /NAMES list.\r\n"
-            data += "NOTICE AUTH:*** You have been successfull logged in !\r\n"
-            data += "NOTICE *:*** You have been forced to join #public\r\n"
+            data += "%s NOTICE %s :You are now identified for %s.\r\n" % ( NICKSERV_PREFIX , user.nick , login )
+            data += "NOTICE * :*** You have been forced to join #public\r\n"
             c.transport.write( data.encode( 'mac-roman' ) )
         
         # show welcome msg, needs script support in exec/login !!!
@@ -217,7 +226,9 @@ class UserHandler( HLPacketHandler ):
         #   user.status &= ~STATUS_ADMIN
         
         # Check to see if they can use any name; if not, set their nickname to their account name.
-        if not user.hasPriv( PRIV_USE_ANY_NAME ):
+        # Users that aren't logged in yet (e.g. hit by the idle check) have
+        # no account, so leave their nickname alone.
+        if not user.hasPriv( PRIV_USE_ANY_NAME ) and user.account is not None:
             user.nick = user.account.name
         
         change = HLPacket( HTLS_HDR_USER_CHANGE )
@@ -328,7 +339,20 @@ class UserHandler( HLPacketHandler ):
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
     
     def handlePing( self , server , user , packet ):
-        server.sendPacket( user.uid , HLPacket( HTLS_HDR_PING , packet.seq ) )
+        # packet.isIRC also covers IRC clients that PING before logging in.
+        if packet.isIRC or user.isIRC:
+            # Flattened into an IRC PONG echoing the PING's token.
+            pong = HLPacket( HTLS_HDR_PING , packet.seq )
+            token = packet.getString( DATA_STRING )
+            if token:
+                pong.addString( DATA_STRING , token )
+            server.sendPacket( user.uid , pong )
+        else:
+            # Hotline keepalive (tranKeepConnectionAlive, 500): answer with
+            # a reply to the client's transaction. Sending a new 500
+            # transaction instead left the client's request unanswered,
+            # and clients that time out keepalives then disconnect.
+            server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 
     def handleDownloadBanner( self , server , user , packet ):
         """ Stub for Hotline 1.5+ banner download. We don't host a banner,

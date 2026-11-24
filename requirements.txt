@@ -1,1 +1,2 @@
-twisted==26.4.0
+twisted[tls]==26.4.0
+PyYAML==6.0.4

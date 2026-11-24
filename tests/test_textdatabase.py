@@ -197,3 +197,30 @@ class TestListAccounts:
         db.listAccounts()
         loaded = db.loadAccount("admin")
         assert loaded is not None
+
+
+# ---------------------------------------------------------------------------
+# findLogin (case-insensitive lookup used for IRC logins)
+# ---------------------------------------------------------------------------
+
+
+class TestFindLogin:
+    def test_returns_none_when_file_missing(self, db):
+        assert db.findLogin("admin") is None
+
+    def test_matches_regardless_of_case(self, db, admin_account):
+        db.saveAccount(admin_account)
+        assert db.findLogin("ADMIN") == "admin"
+        assert db.findLogin("Admin") == "admin"
+        assert db.findLogin(b"aDmIn") == "admin"
+
+    def test_returns_none_for_unknown_login(self, db, admin_account):
+        db.saveAccount(admin_account)
+        assert db.findLogin("nobody") is None
+
+    def test_ambiguous_match_returns_none(self, db, admin_account, guest_account):
+        db.saveAccount(admin_account)
+        upper = HLAccount(login="ADMIN")
+        upper.password, upper.name, upper.privs, upper.fileRoot = "", "Other", 0, ""
+        db.saveAccount(upper)
+        assert db.findLogin("Admin") is None

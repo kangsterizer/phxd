@@ -24,6 +24,12 @@ class HLDatabase:
         """ Creates a new HLAccount object and loads information for the specified login into it. Returns None if unsuccessful. """
         return None
     
+    def findLogin( self , login ):
+        """ Returns the stored login matching the specified login case-insensitively,
+        or None if there is no match or the match is ambiguous (several
+        accounts differing only by case). """
+        return None
+
     def saveAccount( self , acct ):
         """ Saves the specified HLAccount object to the database. If the HLAccount has a non-zero ID, the information is updated, otherwise a new account is inserted. """
         pass
