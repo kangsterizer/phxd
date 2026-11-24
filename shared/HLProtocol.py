@@ -32,13 +32,25 @@ def buildTrackerClientPacket(name, description, port, users):
             random.randint(0, 4294967295)), _field(name),
             _field(description))
 
+# Characters not allowed in IRC nicknames (RFC 2812: letters, digits and -[]\`^{}|_).
+IRC_NICK_INVALID = re.compile( r'[^A-Za-z0-9\-\[\]\\`^{}|_]' )
+
+def ircSafeNick( nick ):
+    """ Converts a Hotline nickname into a valid IRC nickname. Apostrophes become
+    backticks (the closest valid look-alike) and other invalid characters are
+    dropped, rather than truncating the nick at the first invalid character. """
+    if isinstance( nick , (bytes , bytearray) ):
+        nick = nick.decode( 'mac-roman' )
+    nick = ( nick or "" ).replace( "'" , "`" )
+    return IRC_NICK_INVALID.sub( "" , nick )
+
+def ircNick( uid , nick ):
+    """ Returns the IRC nickname of a user: <uid>_<sanitized nick>. """
+    return str( uid ) + "_" + ircSafeNick( nick )
+
 def ircCheckUserNick( user ):
     """ Check for nick conformance to IRC standards and rename a correct one """
-    nickname = ""
-    nickname = user.nick.replace(" ", "")
-    nickname = re.search('^([0-9-A-z]*)', nickname).group(0)
-    nickname = str(user.uid)+"_"+nickname
-    return nickname
+    return ircNick( user.uid , user.nick )
 
 def HLCharConst( str ):
     """ Returns the numeric equivalent of a 4-character string (OSType in classic Mac OS).
@@ -494,8 +506,8 @@ class HLPacket:
                     # this should be hanlded already elsewhere but forgot :(
                     if user.uid == u.uid:
                         return data
-                    mynick = ircCheckUserNick( u )
-                    mynick = u.nick.replace( " " , "" )
+                    # Public chat shows the plain nick, without the uid prefix.
+                    mynick = ircSafeNick( u.nick )
                 except KeyError:
                     mynick = "PHXD"
                 chatid = self.getNumber( DATA_CHATID )
@@ -538,7 +550,7 @@ class HLPacket:
                         if user.uid == u.uid:
                             data = ":"+oldnick+"!~"+oldnick+"@"+u.ip+" NICK :"+user.nick+"\r\n"
                         else:
-                            data = ":"+str( u.uid )+"_"+oldnick.replace( " " , "" )+" NICK "+ircCheckUserNick( u )+"\r\n"
+                            data = ":"+ircNick( u.uid , oldnick )+" NICK "+ircCheckUserNick( u )+"\r\n"
                         
             elif self.type == HTLS_HDR_TASK:
                 # check for HTLC_HDR_USER_LIST reply:
@@ -589,7 +601,7 @@ class HLPacket:
                 chatid = self.getNumber( DATA_CHATID)
                 uid = self.getNumber( DATA_UID )
                 ( c , u ) = self.server.clients[uid]
-                mynick = ircCheckUserNick( self.getString( DATA_NICK ) )
+                mynick = ircNick( uid , self.getString( DATA_NICK , u.nick ) )
                 data = ":"+mynick+"!~"+mynick+"@"+u.ip+" JOIN :#"+str(chatid)+"\r\n"
 
             elif self.type == HTLS_HDR_BROADCAST:

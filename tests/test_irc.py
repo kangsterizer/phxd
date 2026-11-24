@@ -287,3 +287,67 @@ class TestCaseInsensitiveLogin:
         hl = irc_server.hotline_client()
         seq = hl.login("TESTER", "s3cret", "hl")
         assert (HTLS_HDR_TASK, seq, 1) in hl.replies()
+
+
+class TestNickConversion:
+    def test_safe_nick(self):
+        from shared.HLProtocol import ircSafeNick
+
+        assert ircSafeNick("Cat'Killer") == "Cat`Killer"
+        assert ircSafeNick("CatKiller") == "CatKiller"
+        assert ircSafeNick("BAT McBook Pro") == "BATMcBookPro"
+        assert ircSafeNick("café!") == "caf"
+        assert ircSafeNick("[x]_y-z^{|}\\`") == "[x]_y-z^{|}\\`"
+        assert ircSafeNick("") == ""
+        assert ircSafeNick(None) == ""
+        assert ircSafeNick(b"Cat'Killer") == "Cat`Killer"
+
+    def _hotline_user_joins(self, irc_server, nick="Cat'Killer"):
+        watcher = logged_in_irc_client(irc_server)
+        hl = irc_server.hotline_client()
+        hl.login("guest", "", nick)
+        return watcher, hl
+
+    def test_hotline_user_join_shows_full_nick(self, irc_server):
+        watcher, hl = self._hotline_user_joins(irc_server)
+        assert f":{hl.uid}_Cat`Killer!~{hl.uid}_Cat`Killer@127.0.0.1 JOIN :#public" in watcher.take()
+
+    def test_hotline_chat_sender_is_valid_nick(self, irc_server):
+        from shared.HLProtocol import DATA_STRING, HTLC_HDR_CHAT
+
+        watcher, hl = self._hotline_user_joins(irc_server)
+        watcher.take()
+        hl.send_packet(HTLC_HDR_CHAT, [(DATA_STRING, "hello from hotline")])
+        assert ":Cat`Killer PRIVMSG #public :hello from hotline" in watcher.take()
+
+    def test_who_lists_full_nick(self, irc_server):
+        watcher, hl = self._hotline_user_joins(irc_server)
+        watcher.take()
+        watcher.send("WHO #public")
+        assert any(f" 352 {hl.uid}_Cat`Killer #public " in line for line in watcher.take())
+
+    def test_nick_change_uses_sanitized_old_nick(self, irc_server):
+        from shared.HLProtocol import DATA_NICK, HTLC_HDR_USER_CHANGE
+
+        watcher, hl = self._hotline_user_joins(irc_server)
+        watcher.take()
+        hl.send_packet(HTLC_HDR_USER_CHANGE, [(DATA_NICK, "Cat'Nap")])
+        assert f":{hl.uid}_Cat`Killer NICK {hl.uid}_Cat`Nap" in watcher.take()
+
+    def test_private_chat_join_does_not_crash(self, irc_server):
+        from shared.HLProtocol import (
+            DATA_CHATID,
+            DATA_NICK,
+            DATA_UID,
+            HLPacket,
+            HTLS_HDR_CHAT_USER_CHANGE,
+        )
+
+        watcher, hl = self._hotline_user_joins(irc_server)
+        packet = HLPacket(HTLS_HDR_CHAT_USER_CHANGE, isIRC=1)
+        packet.server = irc_server.server
+        packet.addNumber(DATA_CHATID, 3)
+        packet.addNumber(DATA_UID, hl.uid)
+        packet.addString(DATA_NICK, "Cat'Killer")
+        data = packet.flatten(watcher.user)
+        assert data == f":{hl.uid}_Cat`Killer!~{hl.uid}_Cat`Killer@127.0.0.1 JOIN :#3\r\n".encode()

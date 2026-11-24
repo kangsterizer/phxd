@@ -200,7 +200,7 @@ def irc_server(tmp_path, monkeypatch):
 
     import server.handlers
     import server.HLServer as hlserver
-    from shared.HLProtocol import PRIV_USE_ANY_NAME
+    from shared.HLProtocol import PRIV_READ_CHAT, PRIV_SEND_CHAT, PRIV_USE_ANY_NAME
 
     # Log files, the text DB and support/exec lookups are all relative to
     # the working directory; keep them out of the repo.
@@ -215,9 +215,12 @@ def irc_server(tmp_path, monkeypatch):
     srv = hlserver.HLServer()
     database = HarnessDatabase(
         [
-            # Like a typical install, accounts may choose their own nick.
+            # Like a typical install, accounts may chat and choose their own nick.
             make_account(
-                login=login, name=name, password=md5hex(password), privs=PRIV_USE_ANY_NAME
+                login=login,
+                name=name,
+                password=md5hex(password),
+                privs=PRIV_USE_ANY_NAME | PRIV_SEND_CHAT | PRIV_READ_CHAT,
             )
             for login, name, password in DEFAULT_ACCOUNTS
         ]
