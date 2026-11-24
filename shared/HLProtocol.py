@@ -16,6 +16,13 @@ try:
 except NameError:
     LOG_LEVEL = "INFO"
 try:
+    TCP_KEEPALIVE_IDLE
+except NameError:
+    TCP_KEEPALIVE_IDLE = 60
+    TCP_KEEPALIVE_INTERVAL = 15
+    TCP_KEEPALIVE_COUNT = 4
+    TCP_USER_TIMEOUT = 90
+try:
     IRC_TLS_PORT
 except NameError:
     IRC_TLS_PORT = 0

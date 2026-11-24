@@ -32,6 +32,8 @@ The program offers two methods of storing server related data (accounts, news, e
 
 **phxd** always logs its internal events to standard output (so they show up in `docker logs` when running in Docker). If **"ENABLE\_FILE\_LOG"** is set to **True**, they are also written to the **"LOG\_FILE"** path, rotating logfiles every **"LOG\_MAX\_SIZE\_MBYTES"**, keeping a maximum of **"MAX\_LOG\_FILES"**. **"LOG\_LEVEL"** (default **INFO**) sets the minimum level logged; **DEBUG** adds hex dumps of every packet and is meant for troubleshooting only.
 
+Connections whose client vanished without closing them (network drop, sleep, NAT timeout) are detected with TCP keepalive and closed within about two minutes, instead of the user staying listed for 15 minutes or more; see the **"TCP\_KEEPALIVE\_\*"** and **"TCP\_USER\_TIMEOUT"** settings.
+
 The **"SERVER\_NAME"** and **"SERVER\_DESCRIPTION"** attributes will be used to advertise the server to Hotline tracker servers.
 By default, the **phxd** instance will not be listed on any trackers. This can be changed with the **"TRACKER\_LIST"** setting, a list of tracker hostnames (or IP addresses) and ports. The Hotline server default port for advertising servers is **5499**, this differs to the port used by clients to list servers. The following configuration will get your server listed on the (currently) most active Hotline trackers running:
 

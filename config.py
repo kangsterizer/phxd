@@ -46,6 +46,17 @@ SERVER_PORT = 5500
 SERVER_NAME = "phxd server"
 SERVER_DESCRIPTION = "Yet another phxd server instance"
 IDLE_TIME = 10 * 60
+# Dead connection detection. Clients whose network drops without closing
+# the connection would otherwise stay listed for 15+ minutes (or forever
+# while idle). TCP keepalive probes a connection after TCP_KEEPALIVE_IDLE
+# seconds of silence, every TCP_KEEPALIVE_INTERVAL seconds, and drops it
+# after TCP_KEEPALIVE_COUNT unanswered probes; TCP_USER_TIMEOUT drops a
+# connection whose sent data stays unacknowledged that many seconds.
+# Set TCP_KEEPALIVE_IDLE or TCP_USER_TIMEOUT to 0 to disable them.
+TCP_KEEPALIVE_IDLE = 60
+TCP_KEEPALIVE_INTERVAL = 15
+TCP_KEEPALIVE_COUNT = 4
+TCP_USER_TIMEOUT = 90
 BAN_TIME = 15 * 60
 
 # Path (relative to the server working directory or absolute) to a plain-

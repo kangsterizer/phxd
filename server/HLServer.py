@@ -12,12 +12,52 @@ from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
 from server.HLTracker import HLTrackerClient
 import sys
+import socket
 #from twisted.logger import globalLogBeginner, textFileLogObserver
 #globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)])
 
 from config import *
 import time , logging
 from logging.handlers import RotatingFileHandler
+
+def findSocket( transport , maxDepth = 5 ):
+    """ Returns the OS socket under a Twisted transport, unwrapping TLS
+    (TLSMemoryBIOProtocol / BufferingTLSTransport) layers, or None. """
+    for _ in range( maxDepth ):
+        if transport is None:
+            return None
+        sock = getattr( transport , "socket" , None )
+        if isinstance( sock , socket.socket ):
+            return sock
+        nextTransport = getattr( transport , "transport" , None )
+        if nextTransport is None:
+            nextTransport = getattr( getattr( transport , "_protocol" , None ) , "transport" , None )
+        transport = nextTransport
+    return None
+
+def enableDeadPeerDetection( sock , idle = None , interval = None , count = None , userTimeout = None ):
+    """ Enables TCP keepalive and the TCP user timeout on ``sock`` so
+    connections whose peer vanished (network drop, sleep, NAT timeout)
+    are closed within minutes instead of lingering. Options the platform
+    lacks are skipped. Returns the options that were set. """
+    idle = TCP_KEEPALIVE_IDLE if idle is None else idle
+    interval = TCP_KEEPALIVE_INTERVAL if interval is None else interval
+    count = TCP_KEEPALIVE_COUNT if count is None else count
+    userTimeout = TCP_USER_TIMEOUT if userTimeout is None else userTimeout
+    applied = {}
+    if idle > 0:
+        sock.setsockopt( socket.SOL_SOCKET , socket.SO_KEEPALIVE , 1 )
+        applied["SO_KEEPALIVE"] = 1
+        for name , value in ( ( "TCP_KEEPIDLE" , idle ) , ( "TCP_KEEPINTVL" , interval ) , ( "TCP_KEEPCNT" , count ) ):
+            option = getattr( socket , name , None )
+            if option is not None and value > 0:
+                sock.setsockopt( socket.IPPROTO_TCP , option , int( value ) )
+                applied[name] = int( value )
+    option = getattr( socket , "TCP_USER_TIMEOUT" , None )
+    if option is not None and userTimeout > 0:
+        sock.setsockopt( socket.IPPROTO_TCP , option , int( userTimeout * 1000 ) )
+        applied["TCP_USER_TIMEOUT"] = int( userTimeout * 1000 )
+    return applied
 
 class HLConnection( Protocol ):
     """ Protocol subclass to handle parsing and dispatching of raw hotline data. """
@@ -35,6 +75,12 @@ class HLConnection( Protocol ):
         self.capReplied = False
         self.guestTimer = None
         self.idleTimer = reactor.callLater( IDLE_TIME , self.idleCheck )
+        try:
+            sock = findSocket( self.transport )
+            if sock is not None:
+                enableDeadPeerDetection( sock )
+        except OSError as e:
+            self.factory.log.warning( "Could not enable dead connection detection: %s" , e )
         try:
             peer = self.transport.getPeer()
             self.factory.log.info( "Client connected: %s:%s (connID=%d)" , peer.host , peer.port , self.connID )
