@@ -28,6 +28,9 @@ class HLTrackerClient(DatagramProtocol):
         of the specified HLTracker daemon.
         """
         errorMsg = failure.getErrorMessage()
+        # Release the UDP socket, otherwise one leaks per refresh period
+        # until the ephemeral port range is exhausted.
+        self.transport.loseConnection()
         self.server.logEvent(LOG_TYPE_TRACKER, "Failed to update tracker {}:"
                              " {}".format(self.hostname, errorMsg))
 
@@ -47,15 +50,20 @@ class HLTrackerClient(DatagramProtocol):
         encoding the currently running phxd HL server instance user 
         count, server name, description and TCP port to reach it on.
         """
-        self.transport.connect(hostIP, self.port)
-        userCount = self.server.getUserCount()
-        packet = buildTrackerClientPacket(SERVER_NAME, SERVER_DESCRIPTION,
-                                          SERVER_PORT, userCount)
-        self.transport.write(packet)
-        self.server.logEvent(LOG_TYPE_TRACKER, "Updated tracker {}:{} with {} "
-                             "users.".format(self.hostname, self.port, userCount))
-        # We're done, close this connection.
-        self.transport.loseConnection()
+        try:
+            self.transport.connect(hostIP, self.port)
+            userCount = self.server.getUserCount()
+            packet = buildTrackerClientPacket(SERVER_NAME, SERVER_DESCRIPTION,
+                                              SERVER_PORT, userCount)
+            self.transport.write(packet)
+            self.server.logEvent(LOG_TYPE_TRACKER, "Updated tracker {}:{} with {} "
+                                 "users.".format(self.hostname, self.port, userCount))
+        except Exception as e:
+            self.server.logEvent(LOG_TYPE_TRACKER, "Failed to update tracker {}:"
+                                 " {}".format(self.hostname, e))
+        finally:
+            # We're done (or failed), close this connection either way.
+            self.transport.loseConnection()
 
     def connectionRefused(self):
         """

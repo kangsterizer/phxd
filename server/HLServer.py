@@ -262,7 +262,13 @@ class HLServer( Factory ):
         and description of server and the current user count.
         """
         for hostname, port in TRACKER_LIST:
-            reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+            # One failing tracker must not raise out of the LoopingCall,
+            # which would stop all future tracker updates.
+            try:
+                reactor.listenUDP(0, HLTrackerClient(self, hostname, port))
+            except Exception as e:
+                self.logEvent(LOG_TYPE_TRACKER, "Failed to update tracker {}:"
+                              " {}".format(hostname, e))
 
     def updateTrackersFailed(self, reason):
         """Errback invoked when the task to update the trackers

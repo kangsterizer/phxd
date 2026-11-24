@@ -8,12 +8,20 @@ import re
 
 def buildTrackerClientPacket(name, description, port, users):
     """Builds an info packet incorporating the specified name
-    and description ASCII strings and user numbers integer.
+    and description strings and user numbers integer.
+    ``name`` and ``description`` may be ``str`` (encoded as mac-roman,
+    like the rest of the protocol) or ``bytes``; each is truncated to
+    the 255 bytes a one-byte length prefix can describe.
     """
-    return b'\x00\x01%s%s\x00\x00%s%s%s%s%s\x00' % (
+    def _field(value):
+        if isinstance(value, str):
+            value = value.encode('mac-roman', errors='replace')
+        value = bytes(value)[:255]
+        return pack('B', len(value)) + value
+    return b'\x00\x01%s%s\x00\x00%s%s%s\x00' % (
             pack('>H', port), pack('>H', users), pack("I",
-            random.randint(0, 4294967295)), pack('b', len(name)),
-            name, pack('b', len(description)), description)
+            random.randint(0, 4294967295)), _field(name),
+            _field(description))
 
 def ircCheckUserNick( user ):
     """ Check for nick conformance to IRC standards and rename a correct one """
