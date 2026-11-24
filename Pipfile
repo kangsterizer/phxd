@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 twisted = ">=26.4.0"
+pyyaml = ">=6.0.4"
 
 [dev-packages]
 pytest = ">=9"

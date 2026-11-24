@@ -355,7 +355,7 @@ class HLServer( Factory ):
         # (or, worse, nowhere at all when ENABLE_FILE_LOG is off).
         streamHandler = logging.StreamHandler( sys.stdout )
         streamHandler.setFormatter( fmt )
-        streamHandler.setLevel( logging.DEBUG )
+        streamHandler.setLevel( getattr( logging , LOG_LEVEL , logging.INFO ) )
         self.log.addHandler( streamHandler )
 
         if ENABLE_FILE_LOG:
@@ -379,7 +379,7 @@ class HLServer( Factory ):
                     backupCount=MAX_LOG_FILES,
                 )
                 fileHandler.setFormatter( fmt )
-                fileHandler.setLevel( logging.DEBUG )
+                fileHandler.setLevel( getattr( logging , LOG_LEVEL , logging.INFO ) )
                 self.log.addHandler( fileHandler )
             except (IOError, OSError) as e:
                 self.log.warning( "Could not open log file %s: %s" , LOG_FILE , e )

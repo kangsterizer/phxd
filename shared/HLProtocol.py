@@ -11,6 +11,10 @@ try:
     IRC_GUEST_LOGIN_DELAY
 except NameError:
     IRC_GUEST_LOGIN_DELAY = 5
+try:
+    LOG_LEVEL
+except NameError:
+    LOG_LEVEL = "INFO"
 
 # Source prefix for notices from the (virtual) NickServ service.
 NICKSERV_PREFIX = ":NickServ!NickServ@services"

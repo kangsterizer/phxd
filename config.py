@@ -33,6 +33,10 @@ ENABLE_FILE_LOG = True
 LOG_FILE = os.path.join(DB_FILE_BASEPATH, "phxd.log")
 LOG_MAX_SIZE_MBYTES = 10
 MAX_LOG_FILES = 5
+# Minimum level of the messages written to stdout ("docker logs") and to
+# LOG_FILE: DEBUG, INFO, WARNING, ERROR or CRITICAL. DEBUG includes hex
+# dumps of every packet, so only use it for troubleshooting.
+LOG_LEVEL = "INFO"
 
 ################################################################################
 # server configuration
@@ -117,3 +121,22 @@ IRC_GUEST_LOGIN_DELAY = 5
 
 ENABLE_SERVER_LINKING = False
 LINK_PORT = SERVER_PORT + 3
+
+
+################################################################################
+# YAML overrides
+################################################################################
+
+# Any setting above can be overridden from a YAML file, read at startup:
+# $PHXD_CONFIG if set, otherwise phxd.yaml next to this file. Settings are
+# written in lower case, e.g.:
+#
+#   server_name: "My Hotline server"
+#   tracker_list:
+#     - tracker.preterhuman.net:5499
+#   log_level: INFO
+#
+# In Docker, mount the file into the container (see README.md) so the
+# configuration can change with a restart instead of an image rebuild.
+from shared.HLConfig import loadOverrides as _loadOverrides
+CONFIG_OVERRIDDEN = _loadOverrides( globals() , os.path.dirname( os.path.abspath( __file__ ) ) )
