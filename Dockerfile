@@ -23,6 +23,7 @@ COPY configure_phxd.py /app/configure_phxd.py
 # "Failed to connect for file transfer: Connection refused".
 EXPOSE 5500/tcp
 EXPOSE 5501/tcp
+EXPOSE 6697/tcp
 
 RUN [ "python", "configure_phxd.py" ]
 CMD [ "python", "phxd" ]

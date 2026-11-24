@@ -32,3 +32,9 @@ log_level: INFO
 # Seconds before an IRC client that hasn't logged in is logged in as guest
 # (0 disables automatic guest login).
 # irc_guest_login_delay: 5
+
+# IRC over TLS (6697 is the standard port; 0 disables). The certificate
+# files are reloaded automatically when renewed.
+# irc_tls_port: 6697
+# irc_tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
+# irc_tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem

@@ -15,6 +15,12 @@ try:
     LOG_LEVEL
 except NameError:
     LOG_LEVEL = "INFO"
+try:
+    IRC_TLS_PORT
+except NameError:
+    IRC_TLS_PORT = 0
+    IRC_TLS_CERT = ""
+    IRC_TLS_KEY = ""
 
 # Source prefix for notices from the (virtual) NickServ service.
 NICKSERV_PREFIX = ":NickServ!NickServ@services"

@@ -128,6 +128,23 @@ docker run -d --name phxd \
 
 Once running, the server's log is available with `docker logs phxd` (add `-f` to follow it).
 
+### IRC over TLS
+**phxd** can accept encrypted IRC connections on a separate port, by convention **6697**. Set **"irc\_tls\_port"** and point **"irc\_tls\_cert"** / **"irc\_tls\_key"** at a PEM certificate chain and private key, for example from Let's Encrypt:
+```yaml
+# phxd.yaml
+irc_tls_port: 6697
+irc_tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
+irc_tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem
+```
+and mount the certificates read-only and publish the port when running the container:
+```
+docker run ... \
+  -v /etc/letsencrypt:/etc/letsencrypt:ro \
+  -p 6697:6697 \
+  ... phxd:latest
+```
+Only TLS 1.2 and newer are accepted. The certificate files are reloaded automatically when they change, so certificate renewals don't need a restart (a renewal that fails to load is logged and the previous certificate keeps being used). If TLS is enabled but the certificate can't be loaded at startup, **phxd** exits with an error message. Configure your IRC client to use SSL/TLS on port 6697; you can stop publishing port 6667 to only allow encrypted IRC connections.
+
 ### Reconfiguring
 Edit `phxd.yaml` and restart the container, as the configuration is only read on **phxd**'s startup:
 ```
@@ -150,7 +167,7 @@ When using an IRC client, you **must** log in, either as **"guest"** or as any o
 * **Automatic guest login**: if you don't log in within **"IRC\_GUEST\_LOGIN\_DELAY"** seconds (default 5, 0 disables it), you are logged in as **guest**, provided a guest account exists.
 
 Logins are confirmed, or refused with the reason, by a notice from NickServ. A failed login closes the connection.
-**NOTE:** **phxd** doesn't support SASL or encryption, your user and password will be sent in cleartext. Make sure to use a unique password for **phxd** to avoid password reuse with other services.
+**NOTE:** **phxd** doesn't support SASL, and plain IRC connections are unencrypted: your user and password are sent in cleartext unless you connect over TLS (see ["IRC over TLS"](#irc-over-tls)). Make sure to use a unique password for **phxd** to avoid password reuse with other services.
 
 The server will **"force-join"** you to the **#public** channel. This channel actually corresponds to the **public chat** from the Hotline server. Any messages you type there will be visible to all other Hotline and IRC Users.
 Hotline users appear as `<uid>_<nick>`, with characters IRC doesn't allow in nicks removed (an apostrophe becomes a backtick).

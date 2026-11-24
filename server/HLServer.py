@@ -318,11 +318,28 @@ class HLServer( Factory ):
         self.linker = HLServerLinker( self )
         self._initLog()
         reactor.listenTCP( self.port , self )
+        if IRC_TLS_PORT:
+            self.listenTLS( IRC_TLS_PORT , IRC_TLS_CERT , IRC_TLS_KEY )
         # Update all trackers periodically
         recurrentTask = task.LoopingCall(self.updateTrackers)
         recurrentTask.start(TRACKER_REFRESH_PERIOD)
         #recurrentTask.addErrback(updateTrackersFailed)
     
+    def listenTLS( self , port , certPath , keyPath ):
+        """ Accepts TLS connections on ``port``, served exactly like the
+        plain ones (protocol detection, IRC and Hotline). Exits with a
+        readable error if the certificate can't be loaded. """
+        from server.HLTLS import ReloadingTLSContextFactory , TLSConfigError
+        if not certPath or not keyPath:
+            raise SystemExit( "phxd: configuration error: irc_tls_port is set but irc_tls_cert / irc_tls_key are not" )
+        try:
+            contextFactory = ReloadingTLSContextFactory( certPath , keyPath , self.log )
+        except TLSConfigError as e:
+            raise SystemExit( "phxd: configuration error: %s" % e )
+        reactor.listenSSL( port , self , contextFactory )
+        self.log.info( "Listening for TLS connections on port %d" , port )
+        return contextFactory
+
     def updateTrackers(self):
         """Updates the register trackers, if any, with the name
         and description of server and the current user count.
