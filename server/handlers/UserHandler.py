@@ -94,7 +94,8 @@ class UserHandler( HLPacketHandler ):
         # post-port, so feed those directly to md5.
         password_for_hash = password if isinstance( password , (bytes , bytearray) ) else password.encode( 'mac-roman' )
         if user.account.password != md5( password_for_hash ).hexdigest():
-            nick_raw = packet.getString( DATA_NICK , "unnamed" )
+            # IRC logins carry no nick; keep the one the user already has.
+            nick_raw = packet.getString( DATA_NICK , user.nick or "unnamed" )
             if isinstance( nick_raw , (bytes , bytearray) ):
                 nick_raw = nick_raw.decode( 'mac-roman' )
             user.nick = nick_raw
@@ -189,8 +190,8 @@ class UserHandler( HLPacketHandler ):
                     nicks += " "+ircCheckUserNick( myuser )
             data = ":"+IRC_SERVER_NAME+" 353 "+user.nick+" = #public :"+ircCheckUserNick( user )+nicks+"\r\n"
             data += ":"+IRC_SERVER_NAME+" 366 "+user.nick+" #public :End of /NAMES list.\r\n"
-            data += "NOTICE AUTH:*** You have been successfull logged in !\r\n"
-            data += "NOTICE *:*** You have been forced to join #public\r\n"
+            data += "%s NOTICE %s :You are now identified for %s.\r\n" % ( NICKSERV_PREFIX , user.nick , login )
+            data += "NOTICE * :*** You have been forced to join #public\r\n"
             c.transport.write( data.encode( 'mac-roman' ) )
         
         # show welcome msg, needs script support in exec/login !!!

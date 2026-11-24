@@ -32,6 +32,8 @@ class HLConnection( Protocol ):
         self.isIRC = False
         self.packet = HLPacket()
         self.buffer = b''
+        self.capReplied = False
+        self.guestTimer = None
         self.idleTimer = reactor.callLater( IDLE_TIME , self.idleCheck )
         try:
             peer = self.transport.getPeer()
@@ -43,6 +45,8 @@ class HLConnection( Protocol ):
         """ Called when the connection is lost. """
         if ( self.idleTimer != None ) and self.idleTimer.active():
             self.idleTimer.cancel()
+        if ( self.guestTimer != None ) and self.guestTimer.active():
+            self.guestTimer.cancel()
         try:
             self.factory.log.info( "Client disconnected (connID=%d): %s" , self.connID , reason.getErrorMessage() if hasattr( reason , 'getErrorMessage' ) else reason )
         except Exception:
@@ -101,49 +105,99 @@ class HLConnection( Protocol ):
                         self.parseBuffer()
                 else:
                     # Not hotline, assume IRC. Multiple commands can be chained in IRC.
-                    cmds = self.buffer.splitlines()
-                    if cmds[0].startswith(b"CAP"):
-                        # We received CAP LS, ignore it and read the rest of the buffer
-                        # This is for compatibility with IRC v3.02 clients like irssi
-                        cmds.pop(0)
-                    # If there are no further commands, close the connection.
-                    if not cmds:
-                        self.transport.loseConnection()
-                    # More commands still in the buffer, parse them.
-                    value = ""
-                    try:
-                        # breaking and busted in here
-                        print("got in my try block")
-                        cmd, value = cmds[0].decode('mac-roman').split(" ", 1)
-                    except ValueError:
-                        # Value isn't defined, only parse cmd
-                        print("got in this except?")
-                        cmd = cmds[0].decode('mac-roman').split(" ", 1)[0]
-                    # Check the first command, if NICK or USER, login, else return UNKNOWN COMMAND
-                    if ( cmd == "NICK" ) or ( cmd == "USER" ):
-                        nick = value or "Unnamed"
-                        user = self.factory.getUser( self.connID )
-                        user.nick = nick # Making sure we have the right nick.
-                        # Twisted's transport.write requires bytes in Py3.
-                        def _w( msg ):
-                            self.transport.write( msg.encode( 'mac-roman' ) )
-                        _w( "NOTICE * :*** Welcome to Hotline\r\n" )
-                        _w( "NOTICE AUTH :*** You are NOT logged in\r\n" )
-                        _w( "NOTICE AUTH :*** Please send '/msg loginserv login password' to proceed.\r\n" )
-                        _w( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
-                        _w( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
-                        _w( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
-                        _w( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
-                        _w( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
-
-                        self.isIRC = True
-                        self.gotMagic = True
-                        self.parseBuffer()
+                    # Only look at complete lines; CAP and PASS may precede NICK/USER.
+                    text = self.buffer.decode( 'mac-roman' )
+                    cmds = [ c.rstrip( "\r" ) for c in text.split( "\n" )[:-1] ]
+                    names = [ c.split( " " , 1 )[0].upper() for c in cmds ]
+                    if ( "NICK" not in names ) and ( "USER" not in names ):
+                        if not cmds:
+                            # Wait for a complete line.
+                            return
+                        unexpected = [ n for n in names if n not in ( "CAP" , "PASS" ) ]
+                        if unexpected:
+                            self.ircWrite( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % unexpected[0] )
+                            self.transport.loseConnection()
+                            return
+                        # Only capability negotiation / server password so far:
+                        # answer CAP LS and wait for the client to register.
+                        self.ircReplyCapLS( cmds )
+                        return
+                    nick = "Unnamed"
+                    for c in cmds:
+                        parts = c.split( " " , 1 )
+                        if parts[0].upper() == "NICK" and len( parts ) > 1 and parts[1].strip( ": " ):
+                            nick = parts[1].strip( ": " )
+                            break
+                    # Answer CAP LS before the welcome so clients finish negotiation.
+                    self.ircReplyCapLS( cmds )
+                    user = self.factory.getUser( self.connID )
+                    user.nick = nick # Making sure we have the right nick.
+                    self.ircWrite( "NOTICE * :*** Welcome to Hotline\r\n" )
+                    self.ircWrite( "NOTICE AUTH :*** You are NOT logged in\r\n" )
+                    self.ircWrite( "NOTICE AUTH :*** Log in with '/msg NickServ IDENTIFY <login> <password>', a server password of '<login>:<password>', or '/msg loginserv <login> <password>'.\r\n" )
+                    if IRC_GUEST_LOGIN_DELAY > 0:
+                        self.ircWrite( "NOTICE AUTH :*** Otherwise you will be logged in as guest in %d seconds.\r\n" % IRC_GUEST_LOGIN_DELAY )
                     else:
-                        self.transport.write(
-                            ( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % cmd ).encode( 'mac-roman' )
-                        )
-                        self.transport.loseConnection()
+                        self.ircWrite( "NOTICE AUTH :*** If you do not have an account, use '/msg loginserv guest' to proceed.\r\n" )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 001 %s :Waiting for login input..\r\n" % nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 375 %s :- MOTDs are for losers.\r\n" % user.nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 372 %s :- :)\r\n" % user.nick )
+                    self.ircWrite( ":"+IRC_SERVER_NAME+" 376 %s :End of /MOTD command.\r\n" % user.nick )
+
+                    self.isIRC = True
+                    self.gotMagic = True
+                    if IRC_GUEST_LOGIN_DELAY > 0:
+                        self.guestTimer = reactor.callLater( IRC_GUEST_LOGIN_DELAY , self.ircAutoGuest )
+                    self.parseBuffer()
+
+    def ircWrite( self , text ):
+        """ Writes a line of IRC text (str) to the client. Twisted's
+        transport.write requires bytes in Python 3. """
+        self.transport.write( text.encode( 'mac-roman' , errors = 'replace' ) )
+
+    def ircNotice( self , text , sender = NICKSERV_PREFIX ):
+        """ Sends a NOTICE to this IRC client. """
+        user = self.factory.getUser( self.connID )
+        nick = ( user and user.nick ) or "*"
+        self.ircWrite( "%s NOTICE %s :%s\r\n" % ( sender , nick , text ) )
+
+    def ircReplyCapLS( self , cmds ):
+        """ Replies to a CAP LS found among the handshake lines, if any. """
+        for c in cmds:
+            parts = c.split( " " , 2 )
+            if parts[0].upper() == "CAP" and len( parts ) > 1 and parts[1].upper() == "LS":
+                self.ircHandleCap( "LS" , "" , "*" )
+
+    def ircHandleCap( self , sub , arg , nick ):
+        """ Minimal IRCv3 capability negotiation: we support no capabilities. """
+        if sub == "LS":
+            if not self.capReplied:
+                self.capReplied = True
+                self.ircWrite( ":"+IRC_SERVER_NAME+" CAP %s LS :\r\n" % nick )
+        elif sub == "REQ":
+            if arg.startswith( ":" ):
+                arg = arg[1:]
+            self.ircWrite( ":"+IRC_SERVER_NAME+" CAP %s NAK :%s\r\n" % ( nick , arg ) )
+
+    def ircAutoGuest( self ):
+        """ Logs an IRC client in as guest if it has not logged in by itself. """
+        self.guestTimer = None
+        user = self.factory.getUser( self.connID )
+        if ( not user ) or user.isLoggedIn():
+            return
+        if self.factory.database.loadAccount( "guest" ) == None:
+            self.ircNotice( "No guest account on this server, please IDENTIFY to log in." )
+            return
+        packet = HLPacket( HTLC_HDR_LOGIN , 0 , 0 , 1 )
+        packet.addString( DATA_LOGIN , HLEncode( "guest" ) )
+        packet.addString( DATA_PASSWORD , HLEncode( "" ) )
+        user.isIRC = True
+        user.lastPacketTime = time.time()
+        try:
+            self.factory.dispatchPacket( self.connID , packet )
+        except HLException as ex:
+            # Don't disconnect; the client can still IDENTIFY.
+            self.ircNotice( "Guest login failed: %s" % ex.msg )
     
     def handlePacket( self ):
         """ Dispatch the packet to the factory (and its listeners) and check to see if we should update our away status. """
@@ -152,6 +206,11 @@ class HLConnection( Protocol ):
             if not user:
                 self.transport.loseConnection()
                 return
+            if self.isIRC and self.packet.irccap:
+                self.ircHandleCap( self.packet.irccap[0] , self.packet.irccap[1] , user.nick )
+                return
+            if self.isIRC and self.packet.ircreply:
+                self.ircWrite( self.packet.ircreply )
             if self.isIRC and self.packet.irctrap:
                 # Unsupported command, return 421
                 self.transport.write(
@@ -194,7 +253,9 @@ class HLConnection( Protocol ):
                 "HLException on connID=%d packet.type=0x%x fatal=%s: %s" ,
                 self.connID , self.packet.type , ex.fatal , ex.msg
             )
-            if self.isIRC:
+            if self.isIRC and self.packet.type == HTLC_HDR_LOGIN:
+                self.ircNotice( "Login failed: %s" % ex.msg )
+            elif self.isIRC:
                 if self.packet.irctrap:
                     # Not sure this is still required since we already return a 421 "Unknown command" reply.
                     self.transport.write(

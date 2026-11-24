@@ -105,6 +105,10 @@ XMLRPC_PORT = 5800
 ################################################################################
 
 IRC_SERVER_NAME = "phxd"
+# Seconds to wait after an IRC client connects for it to log in (server
+# password, /msg NickServ IDENTIFY or /msg loginserv) before logging it in
+# automatically as guest. Requires a "guest" account. 0 disables auto-guest.
+IRC_GUEST_LOGIN_DELAY = 5
 
 
 ################################################################################
