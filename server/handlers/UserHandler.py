@@ -339,7 +339,19 @@ class UserHandler( HLPacketHandler ):
         server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
     
     def handlePing( self , server , user , packet ):
-        server.sendPacket( user.uid , HLPacket( HTLS_HDR_PING , packet.seq ) )
+        if user.isIRC:
+            # Flattened into an IRC PONG echoing the PING's token.
+            pong = HLPacket( HTLS_HDR_PING , packet.seq )
+            token = packet.getString( DATA_STRING )
+            if token:
+                pong.addString( DATA_STRING , token )
+            server.sendPacket( user.uid , pong )
+        else:
+            # Hotline keepalive (tranKeepConnectionAlive, 500): answer with
+            # a reply to the client's transaction. Sending a new 500
+            # transaction instead left the client's request unanswered,
+            # and clients that time out keepalives then disconnect.
+            server.sendPacket( user.uid , HLPacket( HTLS_HDR_TASK , packet.seq ) )
 
     def handleDownloadBanner( self , server , user , packet ):
         """ Stub for Hotline 1.5+ banner download. We don't host a banner,

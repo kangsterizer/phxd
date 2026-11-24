@@ -351,3 +351,29 @@ class TestNickConversion:
         packet.addString(DATA_NICK, "Cat'Killer")
         data = packet.flatten(watcher.user)
         assert data == f":{hl.uid}_Cat`Killer!~{hl.uid}_Cat`Killer@127.0.0.1 JOIN :#3\r\n".encode()
+
+
+class TestKeepaliveReplies:
+    def test_irc_pong_echoes_token(self, irc_server):
+        client = logged_in_irc_client(irc_server)
+        client.send("PING :LAG1732412345", "PING plain-token")
+        assert client.take() == [
+            "PONG phxd :LAG1732412345",
+            "PONG phxd :plain-token",
+        ]
+
+    def test_irc_ping_without_token(self, irc_server):
+        client = logged_in_irc_client(irc_server)
+        client.send("PING")
+        assert client.take() == ["PONG phxd :phxd"]
+
+    def test_hotline_keepalive_gets_a_reply(self, irc_server):
+        from shared.HLProtocol import HTLC_HDR_PING, HTLS_HDR_PING, HTLS_HDR_TASK
+
+        hl = irc_server.hotline_client()
+        hl.login("guest", "", "hl")
+        hl.replies()
+        seq = hl.send_packet(HTLC_HDR_PING, [])
+        replies = hl.replies()
+        assert (HTLS_HDR_TASK, seq, 0) in replies
+        assert not any(t == HTLS_HDR_PING for t, _, _ in replies)

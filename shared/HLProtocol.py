@@ -257,6 +257,13 @@ class HLPacket:
             
             elif cmd == "PING":
                 self.type = HTLC_HDR_PING
+                # Keep the token so the PONG can echo it back; clients
+                # use it to match replies (lag measurement).
+                token = line.split( " " , 1 )[1] if " " in line else ""
+                if token.startswith( ":" ):
+                    token = token[1:]
+                if token:
+                    self.addString( DATA_STRING , token )
             
             elif cmd.startswith("LAGTIME"):
                 return len( line )
@@ -504,7 +511,9 @@ class HLPacket:
         data = ""
         if self.isIRC:
             if self.type == HTLS_HDR_PING:
-                data = "PONG :"+IRC_SERVER_NAME+"\r\n"
+                # RFC 2812: PONG <server> :<token from the PING>
+                token = self.getString( DATA_STRING , IRC_SERVER_NAME )
+                data = "PONG "+IRC_SERVER_NAME+" :"+token+"\r\n"
             
             elif self.type == HTLS_HDR_CHAT:
                 try:
