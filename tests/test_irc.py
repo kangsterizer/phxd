@@ -253,3 +253,37 @@ class TestAutoGuest:
         client.transport.loseConnection()
         assert not any(call.func.__name__ == "ircAutoGuest" for call in irc_server.clock.getDelayedCalls())
         irc_server.clock.advance(10)  # nothing fires against the closed connection
+
+
+class TestCaseInsensitiveLogin:
+    def test_nick_with_different_case_finds_account(self, irc_server):
+        client = irc_server.irc_client()
+        lines = client.register("TeStEr", "PRIVMSG NickServ :IDENTIFY s3cret")
+        assert account_of(client) == "tester"
+        assert any("You are now identified for tester." in line for line in lines)
+
+    def test_server_password_with_different_case(self, irc_server):
+        client = irc_server.irc_client()
+        client.send("PASS TESTER:s3cret", "NICK x", "USER x 0 * :x")
+        assert account_of(client) == "tester"
+
+    def test_ambiguous_accounts_are_refused(self, irc_server):
+        from tests.conftest import make_account
+
+        for login in ("dup", "DUP"):
+            irc_server.database.accounts.append(
+                make_account(login=login, name=login, password=md5hex("pw"))
+            )
+        client = irc_server.irc_client()
+        lines = client.register("Dup", "PRIVMSG NickServ :IDENTIFY pw")
+        assert any("Login failed: Login is incorrect." in line for line in lines)
+        exact = irc_server.irc_client()
+        exact.register("DUP", "PRIVMSG NickServ :IDENTIFY pw")
+        assert account_of(exact) == "DUP"
+
+    def test_hotline_logins_stay_case_sensitive(self, irc_server):
+        from shared.HLProtocol import HTLS_HDR_TASK
+
+        hl = irc_server.hotline_client()
+        seq = hl.login("TESTER", "s3cret", "hl")
+        assert (HTLS_HDR_TASK, seq, 1) in hl.replies()

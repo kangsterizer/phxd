@@ -87,6 +87,14 @@ class UserHandler( HLPacketHandler ):
             raise HLException( "You are banned: %s" % reason , True)
 
         user.account = server.database.loadAccount( login )
+        if user.account == None and user.isIRC:
+            # IRC nicks are case-insensitive and NickServ / server-password
+            # logins often use the nick as the account name, so match
+            # case-insensitively (Hotline logins stay exact).
+            storedLogin = server.database.findLogin( login )
+            if storedLogin != None:
+                login = storedLogin
+                user.account = server.database.loadAccount( login )
         if user.account == None:
             server.log.info( "Login failed: account %r not found" , login )
             raise HLException( "Login is incorrect." , True)

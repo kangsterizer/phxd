@@ -71,6 +71,12 @@ class FakeDatabase:
                 return a
         return None
 
+    def findLogin(self, login):
+        if isinstance(login, (bytes, bytearray)):
+            login = login.decode("mac-roman")
+        matches = [a.login for a in self.accounts if a.login.lower() == login.lower()]
+        return matches[0] if len(matches) == 1 else None
+
     def saveAccount(self, acct):
         for i, existing in enumerate(self.accounts):
             if existing.login == acct.login:
