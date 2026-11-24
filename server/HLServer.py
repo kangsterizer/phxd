@@ -157,6 +157,11 @@ class HLConnection( Protocol ):
                 self.transport.write(
                     ( ":"+IRC_SERVER_NAME+" 421 %s %s :Unknown command\r\n" % (user.nick, self.packet.irctrap) ).encode( 'mac-roman' )
                 )
+                return
+            if self.isIRC and self.packet.type == 0:
+                # Consumed IRC line with nothing to dispatch (PONG, LAGTIME, ...).
+                # Ignore it so it neither errors nor resets the idle timer.
+                return
             if user.isLoggedIn():
                 # Make sure we're logged in before doing anything.
                 self.factory.dispatchPacket( self.connID , self.packet )
