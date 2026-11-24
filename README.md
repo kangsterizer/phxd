@@ -131,22 +131,27 @@ docker run -d --name phxd \
 
 Once running, the server's log is available with `docker logs phxd` (add `-f` to follow it).
 
-### IRC over TLS
-**phxd** can accept encrypted IRC connections on a separate port, by convention **6697**. Set **"irc\_tls\_port"** and point **"irc\_tls\_cert"** / **"irc\_tls\_key"** at a PEM certificate chain and private key, for example from Let's Encrypt:
+### TLS (encrypted connections)
+**phxd** can accept encrypted connections on separate ports, using one certificate for all of them:
+* **Hotline over TLS** on **"hotline\_tls\_port"**, by convention **5600** (as used by Mobius and the [mierau/hotline](https://github.com/mierau/hotline) client's "secure connection"), with encrypted file transfers on the port after it (**5601**). The TLS port is advertised to trackers, so clients that support it can find it in the server list.
+* **IRC over TLS** on **"irc\_tls\_port"**, by convention **6697**.
+
+Point **"tls\_cert"** / **"tls\_key"** at a PEM certificate chain and private key, for example from Let's Encrypt:
 ```yaml
 # phxd.yaml
+tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
+tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem
+hotline_tls_port: 5600
 irc_tls_port: 6697
-irc_tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
-irc_tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem
 ```
-and mount the certificates read-only and publish the port when running the container:
+and mount the certificates read-only and publish the ports when running the container:
 ```
 docker run ... \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
-  -p 6697:6697 \
+  -p 5600:5600 -p 5601:5601 -p 6697:6697 \
   ... phxd:latest
 ```
-Only TLS 1.2 and newer are accepted. The certificate files are reloaded automatically when they change, so certificate renewals don't need a restart (a renewal that fails to load is logged and the previous certificate keeps being used). If TLS is enabled but the certificate can't be loaded at startup, **phxd** exits with an error message. Configure your IRC client to use SSL/TLS on port 6697; you can stop publishing port 6667 to only allow encrypted IRC connections.
+Only TLS 1.2 and newer are accepted. The certificate files are reloaded automatically when they change, so certificate renewals don't need a restart (a renewal that fails to load is logged and the previous certificate keeps being used). If TLS is enabled but the certificate can't be loaded at startup, **phxd** exits with an error message. The unencrypted ports keep working for clients without TLS support; you can stop publishing them to only allow encrypted connections.
 
 ### Reconfiguring
 Edit `phxd.yaml` and restart the container, as the configuration is only read on **phxd**'s startup:
@@ -158,7 +163,7 @@ If the file has an error, **phxd** exits with a message explaining it, visible w
 Rebuilding the image is only needed to update **phxd** itself. Since all of **phxd**'s user data is stored in the Docker Volume and the files directory, and the configuration in `phxd.yaml`, it is safe to destroy the container, rebuild the image and run a new container with the same options: the server will restart in the same state and with the same logs.
 
 # Usage
-Once running, **phxd** can be connected to by pointing any Hotline or IRC client at its **"server\_port"** (5500 by default; the Docker example above also publishes it on the usual IRC port 6667), or an IRC client using TLS at **"irc\_tls\_port"**.
+Once running, **phxd** can be connected to by pointing any Hotline or IRC client at its **"server\_port"** (5500 by default; the Docker example above also publishes it on the usual IRC port 6667), or, over TLS, at **"hotline\_tls\_port"** (Hotline) and **"irc\_tls\_port"** (IRC).
 * **Hotline**
 When using a Hotline client, you can connect to the server as "Guest" by using a username of "guest" and no password. Guest access is fairly limited, and this is only useful to test your server. You **will** need to login as "admin" using a default password of "adminpass" and immediately change the admin password to a pass of your choice, or delete the admin account (after creating another privileged account of course).
 * **IRC**
@@ -170,7 +175,7 @@ When using an IRC client, you **must** log in, either as **"guest"** or as any o
 * **Automatic guest login**: if you don't log in within **"IRC\_GUEST\_LOGIN\_DELAY"** seconds (default 5, 0 disables it), you are logged in as **guest**, provided a guest account exists.
 
 Logins are confirmed, or refused with the reason, by a notice from NickServ. A failed login closes the connection.
-**NOTE:** **phxd** doesn't support SASL, and plain IRC connections are unencrypted: your user and password are sent in cleartext unless you connect over TLS (see ["IRC over TLS"](#irc-over-tls)). Make sure to use a unique password for **phxd** to avoid password reuse with other services.
+**NOTE:** **phxd** doesn't support SASL, and plain IRC connections are unencrypted: your user and password are sent in cleartext unless you connect over TLS (see ["TLS"](#tls-encrypted-connections)). Make sure to use a unique password for **phxd** to avoid password reuse with other services.
 
 The server will **"force-join"** you to the **#public** channel. This channel actually corresponds to the **public chat** from the Hotline server. Any messages you type there will be visible to all other Hotline and IRC Users.
 Hotline users appear as `<uid>_<nick>`, with characters IRC doesn't allow in nicks removed (an apostrophe becomes a backtick).

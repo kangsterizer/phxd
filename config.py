@@ -124,14 +124,19 @@ IRC_SERVER_NAME = "phxd"
 # password, /msg NickServ IDENTIFY or /msg loginserv) before logging it in
 # automatically as guest. Requires a "guest" account. 0 disables auto-guest.
 IRC_GUEST_LOGIN_DELAY = 5
-# IRC over TLS: port to accept TLS connections on (6697 is the standard
-# IRC TLS port; 0 disables TLS), and the PEM certificate chain and private
-# key to use, e.g. Let's Encrypt's fullchain.pem and privkey.pem. The files
-# are reloaded automatically when they change (certificate renewals).
-# Connections on this port are otherwise identical to SERVER_PORT ones.
+# TLS. TLS_CERT / TLS_KEY are the PEM certificate chain and private key
+# used by all TLS ports, e.g. Let's Encrypt's fullchain.pem and privkey.pem;
+# the files are reloaded automatically when they change (renewals).
+#  - HOTLINE_TLS_PORT: Hotline over TLS (5600 by convention, as used by
+#    Mobius and the mierau/hotline client), with TLS file transfers on the
+#    port after it. Advertised to trackers.
+#  - IRC_TLS_PORT: IRC over TLS (6697 is the standard IRC TLS port).
+# 0 disables a port. Connections on TLS ports are otherwise identical to
+# SERVER_PORT ones.
+TLS_CERT = ""
+TLS_KEY = ""
+HOTLINE_TLS_PORT = 0
 IRC_TLS_PORT = 0
-IRC_TLS_CERT = ""
-IRC_TLS_KEY = ""
 
 
 ################################################################################

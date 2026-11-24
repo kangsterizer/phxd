@@ -54,7 +54,8 @@ class HLTrackerClient(DatagramProtocol):
             self.transport.connect(hostIP, self.port)
             userCount = self.server.getUserCount()
             packet = buildTrackerClientPacket(SERVER_NAME, SERVER_DESCRIPTION,
-                                              SERVER_PORT, userCount)
+                                              SERVER_PORT, userCount,
+                                              HOTLINE_TLS_PORT)
             self.transport.write(packet)
             self.server.logEvent(LOG_TYPE_TRACKER, "Updated tracker {}:{} with {} "
                                  "users.".format(self.hostname, self.port, userCount))

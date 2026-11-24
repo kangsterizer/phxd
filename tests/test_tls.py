@@ -1,4 +1,4 @@
-"""Tests for IRC over TLS (``server.HLTLS`` and ``HLServer.listenTLS``).
+"""Tests for TLS support (``server.HLTLS`` and ``HLServer.setupTLS``).
 
 Certificates are generated on the fly. The end-to-end test runs a real
 TLS handshake between a pyOpenSSL client and phxd's TLS stack (the same
@@ -186,24 +186,51 @@ class TestReloadingTLSContextFactory:
         assert served_common_name(factory.getContext()) == "first"
 
 
-class TestListenTLS:
-    def test_requires_cert_and_key(self, irc_server):
-        with pytest.raises(SystemExit, match="irc_tls_cert / irc_tls_key are not"):
-            irc_server.server.listenTLS(6697, "", "")
-
-    def test_bad_certificate_exits_with_message(self, irc_server, tmp_path):
-        with pytest.raises(SystemExit, match="phxd: configuration error: cannot"):
-            irc_server.server.listenTLS(6697, str(tmp_path / "x.crt"), str(tmp_path / "x.key"))
-
-    def test_listens_with_reloading_factory(self, irc_server, tmp_path, monkeypatch):
+class TestSetupTLS:
+    @pytest.fixture
+    def listen_calls(self, monkeypatch):
         from twisted.internet import reactor
 
         calls = []
         monkeypatch.setattr(reactor, "listenSSL", lambda *args: calls.append(args))
+        return calls
+
+    def test_disabled_when_no_tls_port(self, irc_server, listen_calls):
+        assert irc_server.server.setupTLS(0, 0, "", "") is None
+        assert listen_calls == []
+
+    def test_requires_cert_and_key(self, irc_server, listen_calls):
+        with pytest.raises(SystemExit, match="tls_cert / tls_key are not"):
+            irc_server.server.setupTLS(5600, 0, "", "")
+
+    def test_bad_certificate_exits_with_message(self, irc_server, tmp_path, listen_calls):
+        with pytest.raises(SystemExit, match="phxd: configuration error: cannot"):
+            irc_server.server.setupTLS(0, 6697, str(tmp_path / "x.crt"), str(tmp_path / "x.key"))
+
+    def test_hotline_and_irc_ports_share_one_certificate(self, irc_server, tmp_path, listen_calls):
         cert, key = write_cert(tmp_path, "a")
-        factory = irc_server.server.listenTLS(6697, cert, key)
-        assert calls == [(6697, irc_server.server, factory)]
+        server = irc_server.server
+        factory = server.setupTLS(5600, 6697, cert, key)
         assert isinstance(factory, ReloadingTLSContextFactory)
+        assert sorted(listen_calls, key=lambda c: c[0]) == [
+            (5600, server, factory),
+            (5601, server.fileserver, factory),
+            (6697, server, factory),
+        ]
+
+    def test_irc_only(self, irc_server, tmp_path, listen_calls):
+        cert, key = write_cert(tmp_path, "a")
+        factory = irc_server.server.setupTLS(0, 6697, cert, key)
+        assert listen_calls == [(6697, irc_server.server, factory)]
+
+    def test_same_port_for_both_listens_once(self, irc_server, tmp_path, listen_calls):
+        cert, key = write_cert(tmp_path, "a")
+        server = irc_server.server
+        factory = server.setupTLS(5600, 5600, cert, key)
+        assert sorted(listen_calls, key=lambda c: c[0]) == [
+            (5600, server, factory),
+            (5601, server.fileserver, factory),
+        ]
 
 
 def test_irc_login_over_tls_end_to_end(irc_server, tmp_path):

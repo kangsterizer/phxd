@@ -366,26 +366,37 @@ class HLServer( Factory ):
         self._initLog()
         self._ensureFileRoot()
         reactor.listenTCP( self.port , self )
-        if IRC_TLS_PORT:
-            self.listenTLS( IRC_TLS_PORT , IRC_TLS_CERT , IRC_TLS_KEY )
+        self.setupTLS( HOTLINE_TLS_PORT , IRC_TLS_PORT , TLS_CERT , TLS_KEY )
         # Update all trackers periodically
         recurrentTask = task.LoopingCall(self.updateTrackers)
         recurrentTask.start(TRACKER_REFRESH_PERIOD)
         #recurrentTask.addErrback(updateTrackersFailed)
     
-    def listenTLS( self , port , certPath , keyPath ):
-        """ Accepts TLS connections on ``port``, served exactly like the
-        plain ones (protocol detection, IRC and Hotline). Exits with a
-        readable error if the certificate can't be loaded. """
+    def setupTLS( self , hotlinePort , ircPort , certPath , keyPath ):
+        """ Starts the TLS listeners: Hotline over TLS on ``hotlinePort``
+        with TLS file transfers on the port after it, and IRC over TLS on
+        ``ircPort`` (0 disables either). All share one certificate, which
+        is reloaded when its files change. Exits with a readable error if
+        TLS is enabled but the certificate can't be loaded. Returns the
+        context factory, or None when TLS is disabled. """
+        ports = [ p for p in ( hotlinePort , ircPort ) if p ]
+        if not ports:
+            return None
         from server.HLTLS import ReloadingTLSContextFactory , TLSConfigError
         if not certPath or not keyPath:
-            raise SystemExit( "phxd: configuration error: irc_tls_port is set but irc_tls_cert / irc_tls_key are not" )
+            raise SystemExit( "phxd: configuration error: a TLS port is set but tls_cert / tls_key are not" )
         try:
             contextFactory = ReloadingTLSContextFactory( certPath , keyPath , self.log )
         except TLSConfigError as e:
             raise SystemExit( "phxd: configuration error: %s" % e )
-        reactor.listenSSL( port , self , contextFactory )
-        self.log.info( "Listening for TLS connections on port %d" , port )
+        # The listener detects Hotline vs IRC per connection, so one
+        # listener serves both if the two ports are the same.
+        for port in sorted( set( ports ) ):
+            reactor.listenSSL( port , self , contextFactory )
+            self.log.info( "Listening for TLS connections on port %d" , port )
+        if hotlinePort:
+            self.fileserver.listenTLS( hotlinePort + 1 , contextFactory )
+            self.log.info( "Listening for TLS file transfers on port %d" , hotlinePort + 1 )
         return contextFactory
 
     def _ensureFileRoot( self ):

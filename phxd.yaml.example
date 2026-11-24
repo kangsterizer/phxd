@@ -33,8 +33,10 @@ log_level: INFO
 # (0 disables automatic guest login).
 # irc_guest_login_delay: 5
 
-# IRC over TLS (6697 is the standard port; 0 disables). The certificate
-# files are reloaded automatically when renewed.
+# TLS: one certificate for all TLS ports, reloaded automatically when
+# renewed. Hotline over TLS conventionally uses 5600 (file transfers on
+# 5601) and IRC over TLS 6697; 0 disables a port.
+# tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
+# tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem
+# hotline_tls_port: 5600
 # irc_tls_port: 6697
-# irc_tls_cert: /etc/letsencrypt/live/chat.example.org/fullchain.pem
-# irc_tls_key: /etc/letsencrypt/live/chat.example.org/privkey.pem

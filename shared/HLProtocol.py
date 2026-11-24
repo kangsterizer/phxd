@@ -26,15 +26,25 @@ try:
     IRC_TLS_PORT
 except NameError:
     IRC_TLS_PORT = 0
-    IRC_TLS_CERT = ""
-    IRC_TLS_KEY = ""
+try:
+    HOTLINE_TLS_PORT
+except NameError:
+    HOTLINE_TLS_PORT = 0
+try:
+    TLS_CERT
+except NameError:
+    TLS_CERT = ""
+    TLS_KEY = ""
 
 # Source prefix for notices from the (virtual) NickServ service.
 NICKSERV_PREFIX = ":NickServ!NickServ@services"
 
-def buildTrackerClientPacket(name, description, port, users):
+def buildTrackerClientPacket(name, description, port, users, tlsPort=0):
     """Builds an info packet incorporating the specified name
     and description strings and user numbers integer.
+    ``tlsPort`` is the Hotline TLS port, if any: it goes in the two bytes
+    after the user count (always zero before), which trackers pass on to
+    clients, as Mobius does.
     ``name`` and ``description`` may be ``str`` (encoded as mac-roman,
     like the rest of the protocol) or ``bytes``; each is truncated to
     the 255 bytes a one-byte length prefix can describe.
@@ -44,8 +54,8 @@ def buildTrackerClientPacket(name, description, port, users):
             value = value.encode('mac-roman', errors='replace')
         value = bytes(value)[:255]
         return pack('B', len(value)) + value
-    return b'\x00\x01%s%s\x00\x00%s%s%s\x00' % (
-            pack('>H', port), pack('>H', users), pack("I",
+    return b'\x00\x01%s%s%s%s%s%s\x00' % (
+            pack('>H', port), pack('>H', users), pack('>H', tlsPort), pack("I",
             random.randint(0, 4294967295)), _field(name),
             _field(description))
 

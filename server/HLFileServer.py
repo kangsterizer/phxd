@@ -86,6 +86,10 @@ class HLFileServer (Factory):
         self.transfers = {}
         self.timeouts = {}
         reactor.listenTCP( self.port , self )
+
+    def listenTLS( self , port , contextFactory ):
+        """ Accepts file transfers over TLS on ``port`` too. """
+        reactor.listenSSL( port , self , contextFactory )
     
     def addUpload( self , owner , path ):
         """ Adds an upload to the list of transfers. """
