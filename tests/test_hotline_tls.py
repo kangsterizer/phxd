@@ -43,15 +43,26 @@ from tests.irc_harness import irc_server  # noqa: F401  (fixture)
 from tests.test_tls import write_cert
 
 
+class AbortableTransport(StringTransport):
+    aborted = False
+
+    def abortConnection(self):
+        self.aborted = True
+        self.loseConnection()
+
+
 class InMemoryTLSClient:
     """A TLS client connected to one of phxd's factories through
-    ``TLSMemoryBIOFactory``, pumped by hand on the harness clock."""
+    ``TLSMemoryBIOFactory``, pumped by hand on the harness clock. With
+    ``answer_close_notify=False`` it behaves like a client that never
+    answers the server's TLS close_notify."""
 
-    def __init__(self, clock, wrapped_factory, context_factory, port):
+    def __init__(self, clock, wrapped_factory, context_factory, port, answer_close_notify=True):
         self.clock = clock
+        self.answer_close_notify = answer_close_notify
         address = IPv4Address("TCP", "127.0.0.1", port)
         self.protocol = TLSMemoryBIOFactory(context_factory, False, wrapped_factory).buildProtocol(address)
-        self.transport = StringTransport(peerAddress=address)
+        self.transport = AbortableTransport(peerAddress=address)
         self.protocol.makeConnection(self.transport)
         self.client = SSL.Connection(SSL.Context(SSL.TLS_CLIENT_METHOD), None)
         self.client.set_connect_state()
@@ -95,7 +106,7 @@ class InMemoryTLSClient:
             except SSL.ZeroReturnError:
                 # The server sent close_notify: answer it, as clients do,
                 # so the server can finish closing the connection.
-                if not self.client.get_shutdown() & SSL.SENT_SHUTDOWN:
+                if self.answer_close_notify and not self.client.get_shutdown() & SSL.SENT_SHUTDOWN:
                     self.client.shutdown()
                     progress = True
             if self.transport.disconnecting and not self.closed:
@@ -174,10 +185,12 @@ def secure_hotline(irc_server, tls):
     return client
 
 
-def transfer(irc_server, tls, xfer_id, payload=b"", size=0):
+def transfer(irc_server, tls, xfer_id, payload=b"", size=0, answer_close_notify=True):
     """Opens a TLS file transfer connection, sends the HTXF header (and an
     upload payload), and returns the client once the transfer is done."""
-    client = InMemoryTLSClient(irc_server.clock, irc_server.server.fileserver, tls, 5601)
+    client = InMemoryTLSClient(
+        irc_server.clock, irc_server.server.fileserver, tls, 5601, answer_close_notify
+    )
     client.send(b"HTXF" + struct.pack("!3L", xfer_id, size, 0) + payload)
     return client
 
@@ -224,3 +237,61 @@ def test_download_and_upload_over_tls(secure_hotline, irc_server, tls):
     assert upload.closed, "server should close the upload connection once complete"
     with open(os.path.join("files", "cpy.bin"), "rb") as fp:
         assert fp.read() == content
+
+
+def upload(secure_hotline, irc_server, tls, name, content, seq, answer_close_notify=True):
+    """Uploads ``content`` as ``name`` over a TLS transfer connection."""
+    name_bytes = name.encode("mac-roman")
+    header = struct.pack("!LHLLLLH", 0x46494C50, 1, 0, 0, 0, 0, 2)  # FILP, 2 forks
+    info = b"\0" * 72 + struct.pack("!H", len(name_bytes)) + name_bytes
+    stream = header + struct.pack("!4L", 0x494E464F, 0, 0, len(info)) + info  # INFO fork
+    stream += struct.pack("!4L", 0x44415441, 0, 0, len(content)) + content  # DATA fork
+    secure_hotline.send(
+        hotline_packet(
+            HTLC_HDR_FILE_PUT,
+            seq,
+            [(DATA_FILENAME, name), (DATA_XFERSIZE, struct.pack("!L", len(stream)))],
+        )
+    )
+    _, _, flags, objects = reply_to(secure_hotline, seq)
+    assert flags == 0
+    xfer_id = struct.unpack("!L", objects[DATA_XFERID])[0]
+    return transfer(irc_server, tls, xfer_id, stream, len(stream), answer_close_notify)
+
+
+class TestClientsThatIgnoreCloseNotify:
+    """Over TLS, the server's close waits for the client's close_notify.
+    Clients that never send one must not leave uploads unfinished or
+    connections (and users) around."""
+
+    def test_upload_is_stored_immediately_and_connection_aborted(self, secure_hotline, irc_server, tls):
+        content = os.urandom(50 * 1024)
+        client = upload(secure_hotline, irc_server, tls, "up.bin", content, 2, answer_close_notify=False)
+        with open(os.path.join("files", "up.bin"), "rb") as fp:
+            assert fp.read() == content
+        assert not os.path.exists(os.path.join("files", "up.bin.hpf"))
+        assert not client.transport.aborted
+        irc_server.clock.advance(10)
+        client.pump()
+        assert client.transport.aborted
+        assert client.closed
+
+    def test_polite_client_is_not_aborted(self, secure_hotline, irc_server, tls):
+        client = upload(secure_hotline, irc_server, tls, "up2.bin", b"data", 2)
+        assert client.closed
+        irc_server.clock.advance(10)
+        assert not client.transport.aborted
+
+    def test_rejected_login_connection_is_aborted(self, irc_server, tls):
+        client = InMemoryTLSClient(irc_server.clock, irc_server.server, tls, 5600, answer_close_notify=False)
+        client.send(b"TRTPHOTL" + struct.pack("!2H", 1, 2))
+        client.send(
+            hotline_packet(HTLC_HDR_LOGIN, 1, [(DATA_LOGIN, HLEncode("tester")), (DATA_PASSWORD, HLEncode("wrong"))])
+        )
+        conn_id = client.protocol.wrappedProtocol.connID
+        assert not client.closed
+        assert conn_id in irc_server.server.clients
+        irc_server.clock.advance(10)
+        client.pump()
+        assert client.transport.aborted and client.closed
+        assert conn_id not in irc_server.server.clients

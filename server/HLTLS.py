@@ -96,3 +96,39 @@ class ReloadingTLSContextFactory:
     def _warn( self , msg , *args ):
         if self.log is not None:
             self.log.error( msg , *args )
+
+
+# Seconds to wait for a connection we closed to actually go away before
+# aborting it.
+CLOSE_TIMEOUT = 10
+
+
+class GracefulCloseMixin:
+    """ Closes connections politely, with a deadline.
+
+    Over TLS, ``loseConnection`` sends a close_notify and only closes the
+    socket once the peer answers with its own; a client that never does
+    keeps the connection (and, for phxd, the user or transfer) around
+    forever. ``closeConnection`` aborts the connection if it is still open
+    ``CLOSE_TIMEOUT`` seconds later. Protocols must call
+    ``connectionClosed`` from their ``connectionLost``. """
+
+    _closeTimer = None
+    _connectionGone = False
+
+    def closeConnection( self ):
+        from twisted.internet import reactor
+        self.transport.loseConnection()
+        if self._closeTimer is None and not self._connectionGone:
+            self._closeTimer = reactor.callLater( CLOSE_TIMEOUT , self._abortIfStillOpen )
+
+    def _abortIfStillOpen( self ):
+        self._closeTimer = None
+        if not self._connectionGone and hasattr( self.transport , "abortConnection" ):
+            self.transport.abortConnection()
+
+    def connectionClosed( self ):
+        self._connectionGone = True
+        if self._closeTimer is not None and self._closeTimer.active():
+            self._closeTimer.cancel()
+        self._closeTimer = None

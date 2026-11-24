@@ -11,6 +11,7 @@ from server.HLWebServices import *
 from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
 from server.HLTracker import HLTrackerClient
+from server.HLTLS import GracefulCloseMixin
 import os
 import sys
 import socket
@@ -60,7 +61,7 @@ def enableDeadPeerDetection( sock , idle = None , interval = None , count = None
         applied["TCP_USER_TIMEOUT"] = int( userTimeout * 1000 )
     return applied
 
-class HLConnection( Protocol ):
+class HLConnection( GracefulCloseMixin , Protocol ):
     """ Protocol subclass to handle parsing and dispatching of raw hotline data. """
     
     def __init__( self , factory , connID ):
@@ -90,6 +91,7 @@ class HLConnection( Protocol ):
 
     def connectionLost( self , reason ):
         """ Called when the connection is lost. """
+        self.connectionClosed()
         if ( self.idleTimer != None ) and self.idleTimer.active():
             self.idleTimer.cancel()
         if ( self.guestTimer != None ) and self.guestTimer.active():
@@ -117,7 +119,7 @@ class HLConnection( Protocol ):
             # Don't let an exception inside parseBuffer disappear into
             # Twisted — log it explicitly so it shows in docker logs.
             self.factory.log.exception( "Unhandled exception in parseBuffer (connID=%d)" , self.connID )
-            self.transport.loseConnection()
+            self.closeConnection()
     
     def parseBuffer( self ):
         """ Parses the current buffer until the buffer is empty or until no more packets can be parsed. """
@@ -163,7 +165,7 @@ class HLConnection( Protocol ):
                         unexpected = [ n for n in names if n not in ( "CAP" , "PASS" ) ]
                         if unexpected:
                             self.ircWrite( ":"+IRC_SERVER_NAME+" 421 %s :Unknown command\r\n" % unexpected[0] )
-                            self.transport.loseConnection()
+                            self.closeConnection()
                             return
                         # Only capability negotiation / server password so far:
                         # answer CAP LS and wait for the client to register.
@@ -251,7 +253,7 @@ class HLConnection( Protocol ):
         try:
             user = self.factory.getUser( self.connID )
             if not user:
-                self.transport.loseConnection()
+                self.closeConnection()
                 return
             if self.isIRC and self.packet.irccap:
                 self.ircHandleCap( self.packet.irccap[0] , self.packet.irccap[1] , user.nick )
@@ -314,12 +316,12 @@ class HLConnection( Protocol ):
                 self.writePacket( packet )
             if ex.fatal:
                 # The exception was fatal (i.e. failed login) so kill the connection.
-                self.transport.loseConnection()
+                self.closeConnection()
         except Exception:
             # Anything else is a bug — surface it instead of letting Twisted
             # eat it.
             self.factory.log.exception( "Unhandled error in handlePacket (connID=%d)" , self.connID )
-            self.transport.loseConnection()
+            self.closeConnection()
     
     def idleCheck( self ):
         """ Called a set amount of time after the last non-ping packet, mark us as idle and trick the handlers into sending the change. """
@@ -580,7 +582,7 @@ class HLServer( Factory ):
         """ Actively disconnect the specified user. """
         if uid in self.clients:
             ( conn , user ) = self.clients[uid]
-            conn.transport.loseConnection()
+            conn.closeConnection()
     
     def removeConnection( self , connID ):
         """ Called from HLConnection when a connection dies. """
