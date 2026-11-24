@@ -11,6 +11,7 @@ from server.HLWebServices import *
 from server.HLDatabaseLogger import *
 from server.HLServerLinkage import *
 from server.HLTracker import HLTrackerClient
+import os
 import sys
 import socket
 #from twisted.logger import globalLogBeginner, textFileLogObserver
@@ -363,6 +364,7 @@ class HLServer( Factory ):
         self.log = logging.getLogger( "phxd" )
         self.linker = HLServerLinker( self )
         self._initLog()
+        self._ensureFileRoot()
         reactor.listenTCP( self.port , self )
         if IRC_TLS_PORT:
             self.listenTLS( IRC_TLS_PORT , IRC_TLS_CERT , IRC_TLS_KEY )
@@ -385,6 +387,17 @@ class HLServer( Factory ):
         reactor.listenSSL( port , self , contextFactory )
         self.log.info( "Listening for TLS connections on port %d" , port )
         return contextFactory
+
+    def _ensureFileRoot( self ):
+        """ Creates the shared files directory if it is missing; otherwise
+        every file listing fails with "The specified directory does not
+        exist." (e.g. a fresh Docker container without a files mount). """
+        if FILE_ROOT and not os.path.isdir( FILE_ROOT ):
+            try:
+                os.makedirs( FILE_ROOT )
+                self.log.info( "Created shared files directory %s" , FILE_ROOT )
+            except OSError as e:
+                self.log.warning( "Could not create shared files directory %s: %s" , FILE_ROOT , e )
 
     def updateTrackers(self):
         """Updates the register trackers, if any, with the name

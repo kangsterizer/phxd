@@ -6,6 +6,7 @@ import socket
 import pytest
 
 from server.HLServer import enableDeadPeerDetection, findSocket
+from tests.irc_harness import irc_server  # noqa: F401  (fixture)
 
 linux_only = pytest.mark.skipif(
     not all(hasattr(socket, name) for name in ("TCP_KEEPIDLE", "TCP_USER_TIMEOUT")),
@@ -87,4 +88,21 @@ def test_connections_without_socket_still_work(irc_server):
     assert any(" 001 alice " in line for line in lines)
 
 
-from tests.irc_harness import irc_server  # noqa: E402,F401  (fixture)
+
+def test_missing_file_root_is_created(irc_server, tmp_path):
+    """The harness runs in tmp_path, where FILE_ROOT ("files") didn't exist."""
+    import os
+
+    from config import FILE_ROOT
+
+    assert os.path.isdir(tmp_path / FILE_ROOT)
+
+
+def test_hotline_file_list_on_fresh_server(irc_server):
+    from shared.HLProtocol import HTLC_HDR_FILE_LIST, HTLS_HDR_TASK
+
+    hl = irc_server.hotline_client()
+    hl.login("guest", "", "hl")
+    hl.replies()
+    seq = hl.send_packet(HTLC_HDR_FILE_LIST, [])
+    assert (HTLS_HDR_TASK, seq, 0) in hl.replies()
