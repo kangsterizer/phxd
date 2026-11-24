@@ -425,9 +425,12 @@ class HLServer( Factory ):
                     msg = twisted_log.textFromEventDict( eventDict ) or ""
                     twisted_logger.error( "%s" , msg )
                 else:
+                    # Twisted's informational messages ("Starting protocol",
+                    # "(UDP Port ... Closed)", ... several per tracker update)
+                    # are only useful when debugging.
                     msg = twisted_log.textFromEventDict( eventDict )
                     if msg:
-                        twisted_logger.info( "%s" , msg )
+                        twisted_logger.debug( "%s" , msg )
 
             twisted_log.addObserver( _bridge )
         except Exception as e:

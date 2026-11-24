@@ -242,3 +242,29 @@ def test_example_file_is_valid():
     assert result.stdout.strip() == (
         "['LOG_LEVEL', 'SERVER_DESCRIPTION', 'SERVER_NAME', 'TRACKER_LIST']"
     )
+
+
+def test_twisted_messages_only_shown_when_debugging(irc_server):
+    """Twisted's own chatter (several lines per tracker update) is logged
+    at DEBUG; its errors stay at ERROR so they show up in docker logs."""
+    import logging
+
+    from twisted.python import log as twisted_log
+
+    records = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    capture = Capture(level=logging.DEBUG)
+    twisted_logger = logging.getLogger("twisted")
+    twisted_logger.addHandler(capture)
+    try:
+        twisted_log.msg("Starting protocol <HLTrackerClient>")
+        twisted_log.err(RuntimeError("boom"), "something broke")
+    finally:
+        twisted_logger.removeHandler(capture)
+    levels = {r.getMessage().split("\n")[0]: r.levelno for r in records}
+    assert levels["Starting protocol <HLTrackerClient>"] == logging.DEBUG
+    assert any(level == logging.ERROR and "something broke" in msg for msg, level in levels.items())
